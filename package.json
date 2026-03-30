@@ -21,7 +21,7 @@
     "url": "git+https://github.com/mblode/spotlight-testing.git"
   },
   "bin": {
-    "spotlight": "./dist/cli.js"
+    "spotlight-testing": "./dist/cli.js"
   },
   "files": [
     "dist",

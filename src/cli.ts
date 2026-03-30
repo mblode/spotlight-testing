@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { resolve } from "node:path";
 import { styleText } from "node:util";
 import { Command } from "commander";
@@ -9,7 +10,7 @@ import { discardChanges, stashPop } from "./git.js";
 const program = new Command();
 
 program
-  .name("spotlight")
+  .name("spotlight-testing")
   .description(
     "Sync git worktree changes into a main repo directory for testing with a single Docker environment",
   )
