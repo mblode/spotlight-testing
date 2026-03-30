@@ -1,62 +1,68 @@
-import { watch, type FSWatcher } from "node:fs"
+import type { FSWatcher } from "node:fs";
+import { watch } from "node:fs";
 
-import { getTrackedFiles } from "./git.js"
+import { getTrackedFiles } from "./git.js";
 
 export interface WatcherOptions {
-  dir: string
-  debounceMs?: number
-  includeUntracked?: boolean
-  onSync: () => void
+  dir: string;
+  debounceMs?: number;
+  includeUntracked?: boolean;
+  onSync: () => void;
 }
 
-export function createWatcher(options: WatcherOptions): FSWatcher {
-  const { dir, debounceMs = 300, includeUntracked = true, onSync } = options
+export const createWatcher = (options: WatcherOptions): FSWatcher => {
+  const { dir, debounceMs = 300, includeUntracked = true, onSync } = options;
 
-  let trackedSet = new Set(getTrackedFiles(dir, includeUntracked))
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null
-  let hasPending = false
+  let trackedSet = new Set(getTrackedFiles(dir, includeUntracked));
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let hasPending = false;
 
   // Refresh tracked files periodically
   const refreshInterval = setInterval(() => {
     try {
-      trackedSet = new Set(getTrackedFiles(dir, includeUntracked))
+      trackedSet = new Set(getTrackedFiles(dir, includeUntracked));
     } catch {
       // git command failed, keep previous set
     }
-  }, 30_000)
+  }, 30_000);
 
   const watcher = watch(dir, { recursive: true }, (_event, filename) => {
-    if (!filename) return
+    if (!filename) {
+      return;
+    }
 
-    // Skip common non-tracked paths
     if (
       filename.includes("node_modules") ||
       filename.includes(".git/") ||
       filename.includes("dist/") ||
       filename.startsWith(".git/")
     ) {
-      return
+      return;
     }
 
-    // Only sync if the file is tracked
-    if (!trackedSet.has(filename)) return
+    if (!trackedSet.has(filename)) {
+      return;
+    }
 
-    hasPending = true
+    hasPending = true;
 
-    if (debounceTimer) clearTimeout(debounceTimer)
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
     debounceTimer = setTimeout(() => {
       if (hasPending) {
-        hasPending = false
-        onSync()
+        hasPending = false;
+        onSync();
       }
-    }, debounceMs)
-  })
+    }, debounceMs);
+  });
 
-  // Clean up interval when watcher closes
   watcher.on("close", () => {
-    clearInterval(refreshInterval)
-    if (debounceTimer) clearTimeout(debounceTimer)
-  })
+    clearInterval(refreshInterval);
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+  });
 
-  return watcher
-}
+  return watcher;
+};

@@ -37,20 +37,20 @@ spotlight off
 
 ### Commands
 
-| Command | Description |
-|---------|-------------|
-| `spotlight on <worktree>` | Start syncing worktree changes into target |
-| `spotlight off` | Stop spotlight and restore target directory |
-| `spotlight status` | Show current spotlight state |
+| Command                   | Description                                 |
+| ------------------------- | ------------------------------------------- |
+| `spotlight on <worktree>` | Start syncing worktree changes into target  |
+| `spotlight off`           | Stop spotlight and restore target directory |
+| `spotlight status`        | Show current spotlight state                |
 
 ### Options for `spotlight on`
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `-t, --target <path>` | Current directory | Target directory to sync into |
-| `-p, --protect <patterns...>` | — | Additional file patterns to never sync |
-| `-d, --debounce <ms>` | 300 | Debounce interval for file watcher |
-| `--no-untracked` | — | Exclude untracked files from sync |
+| Option                        | Default           | Description                            |
+| ----------------------------- | ----------------- | -------------------------------------- |
+| `-t, --target <path>`         | Current directory | Target directory to sync into          |
+| `-p, --protect <patterns...>` | —                 | Additional file patterns to never sync |
+| `-d, --debounce <ms>`         | 300               | Debounce interval for file watcher     |
+| `--no-untracked`              | —                 | Exclude untracked files from sync      |
 
 ### Protected Files
 
@@ -61,11 +61,11 @@ These files are never synced, regardless of git tracking status:
 ## Programmatic API
 
 ```typescript
-import { spotlight, syncOnce, restore } from "spotlight-testing"
+import { spotlight, syncOnce, restore } from "spotlight-testing";
 
 // One-shot sync
-const result = syncOnce("/path/to/worktree", "/path/to/target")
-console.log(`Synced ${result.synced} files, deleted ${result.deleted}`)
+const result = syncOnce("/path/to/worktree", "/path/to/target");
+console.log(`Synced ${result.synced} files, deleted ${result.deleted}`);
 
 // Watch mode
 await spotlight({
@@ -73,7 +73,7 @@ await spotlight({
   target: "/path/to/target",
   protect: ["custom-local-file.json"],
   debounce: 500,
-})
+});
 ```
 
 ## Usage with AI Agents
