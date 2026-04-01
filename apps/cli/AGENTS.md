@@ -35,6 +35,7 @@ src/
 - **No chalk/ora**: Use `import { styleText } from "node:util"` for colors and `@clack/prompts` spinner for progress.
 - **macOS only**: `fs.watch({ recursive: true })` relies on FSEvents. Linux support needs a polling fallback.
 - **Protected files**: `.env`, `.env.chamber`, `.env.ngrok`, `.env.local` are parked out and restored on every checkpoint checkout. Add custom patterns with `--protect`.
+- **Dirty target safety**: `spotlight-testing on` auto-stashes target changes, including untracked files, before detached checkout and restores them on exit. `syncOnce()` still requires a clean target.
 - **Tracked-only default**: Untracked files are excluded unless `--include-untracked` is passed.
 - **Same-repo requirement**: The worktree and target must share the same Git common object database. `checkpoint.ts` validates this before syncing.
 - **Detached HEAD**: The target is left in detached HEAD while spotlight is active. Original state is restored on exit.

@@ -6,6 +6,7 @@ import {
   checkoutDetached,
   getGitBranch,
   getHeadState,
+  gitPath,
   getShortSha,
   hasChanges,
   isGitRepo,
@@ -207,8 +208,11 @@ export const spotlight = (options: SpotlightOptions): void => {
 
   try {
     if (hasChanges(target)) {
-      log("Stashing target changes before spotlight...");
+      log(`Stashing target changes in ${target} before spotlight...`);
       stashName = stash(target, true);
+      if (stashName) {
+        log(`Target stash: ${stashName} (${gitPath(target, "refs/stash")})`);
+      }
     }
 
     checkoutDetached(target, initialCheckpoint, true);
@@ -324,7 +328,7 @@ export const spotlight = (options: SpotlightOptions): void => {
     try {
       const restoredTarget = restoreFromState(state);
       if (state.stashName) {
-        log(`Restored stash: ${state.stashName}`);
+        log(`Restored stash: ${state.stashName} (${gitPath(target, "refs/stash")})`);
       }
       log(`Restored ${target} to ${restoredTarget}`);
     } catch (error) {

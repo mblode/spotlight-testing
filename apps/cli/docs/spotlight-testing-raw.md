@@ -25,11 +25,13 @@ If you run into any issues, please reach out to us at [humans@conductor.build](m
 
 ## Spotlighting a workspace
 
-When you have changes ready to test in a workspace, use the spotlight button in the Conductor UI to copy the changes back to your repository's root directory.
+When you have changes ready to test in a workspace, use the spotlight button in the Conductor UI to apply your workspace changes in your repository's root directory.
 
 You'll then have access to a terminal in your repository root directory in the Conductor UI. Use this terminal to test your application.
 
 When you turn spotlight mode off, your original state in your repository root will be restored.
+
+If your repository root already has local changes, Spotlight preserves them by stashing them in the target repository before checkout and restoring that stash when spotlight mode ends.
 
 ![Spotlight testing](https://mintcdn.com/conductor-7a9c6b47/EyESeSTp_x0b2ktg/images/spotlight.gif?s=e8d1f0ddf6c32f3f91f45631c46fff85)
 
@@ -53,11 +55,11 @@ Spotlight testing is a great fit for:
 
 ### How does Spotlight testing work?
 
-Spotlight testing works by copying the files in your workspace back to your repository root directory.
+Spotlight testing works by creating checkpoint commits from your workspace and checking them out in your repository root directory.
 
-Conductor uses [watchexec](https://github.com/watchexec/watchexec) to watch for changes in your workspace. When that happens, Conductor copies all of your workspace's files to your repository root directory.
+_Only_ files that are tracked in git are synced back to your repository root directory by default. That means build artifacts (like `node_modules`) are not copied back to your repository root directory unless Spotlight explicitly includes them.
 
-_Only_ files that are tracked in git are copied back to your repository root directory. That means build artifacts (like `node_modules`) are not copied back to your repository root directory.
+If your repository root already has local changes, Spotlight preserves them by creating a temporary stash in the target repository before checkout and restoring it when Spotlight stops.
 
 ### Why aren't changes in my repository root directory reflected in my workspace?
 

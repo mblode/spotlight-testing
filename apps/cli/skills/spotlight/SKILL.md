@@ -23,4 +23,6 @@ Checkpoint git worktree changes into a main repo directory for testing with a si
 - Spotlight tracks git-tracked files by default.
 - Pass `--include-untracked` to include untracked files in checkpoints.
 - Spotlight parks and restores target-local `.env*` files during checkpoint checkout.
+- If the target already has local changes, Spotlight creates a temporary `spotlight-auto-*` stash in the target repo and restores it on exit.
+- `syncOnce()` is stricter and requires a clean target working tree.
 - The worktree and target must share the same Git common object database.
