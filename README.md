@@ -1,6 +1,6 @@
 # spotlight-testing
 
-Sync git worktree changes into a main repo directory for testing with a single Docker environment.
+Checkpoint git worktree changes into a repo root directory for testing with a single Docker environment.
 
 ## The Problem
 
@@ -8,7 +8,7 @@ When using git worktrees, Docker Compose uses the directory name as the project 
 
 ## The Solution
 
-Spotlight syncs git-tracked files from a worktree into your main repo directory. You run Docker once from the main directory, and spotlight keeps it up to date with your worktree changes. Hot reload picks up the synced files automatically.
+Spotlight creates checkpoint commits from a worktree and checks them out in your main repo directory. You run Docker once from the main directory, and spotlight keeps it up to date with your worktree changes. Hot reload picks up the checked-out checkpoint automatically.
 
 ## Installation
 
@@ -16,7 +16,7 @@ Spotlight syncs git-tracked files from a worktree into your main repo directory.
 npm install -g spotlight-testing
 ```
 
-Or use directly with npx:
+Or use directly with `npx`:
 
 ```bash
 npx spotlight-testing --help
@@ -25,38 +25,63 @@ npx spotlight-testing --help
 ## Usage
 
 ```bash
-# Start syncing a worktree into the main repo
-spotlight on ~/Code/project-feature-branch --target ~/Code/project
+# From inside a linked worktree, infer the main checkout automatically
+cd ~/Code/project-feature-branch
+spotlight-testing
+
+# Or start explicitly from anywhere
+spotlight-testing on ~/Code/project-feature-branch --target ~/Code/project
 
 # Check status
-spotlight status
+spotlight-testing status
 
 # Stop and restore the main directory
-spotlight off
+spotlight-testing off
 ```
 
 ### Commands
 
-| Command                   | Description                                 |
-| ------------------------- | ------------------------------------------- |
-| `spotlight on <worktree>` | Start syncing worktree changes into target  |
-| `spotlight off`           | Stop spotlight and restore target directory |
-| `spotlight status`        | Show current spotlight state                |
+| Command                           | Description                                      |
+| --------------------------------- | ------------------------------------------------ |
+| `spotlight-testing`               | Start spotlight from the current linked worktree |
+| `spotlight-testing on <worktree>` | Start checkpointing worktree changes into target |
+| `spotlight-testing off`           | Stop spotlight and restore target directory      |
+| `spotlight-testing status`        | Show current spotlight state                     |
 
-### Options for `spotlight on`
+### Options for `spotlight-testing on`
 
-| Option                        | Default           | Description                            |
-| ----------------------------- | ----------------- | -------------------------------------- |
-| `-t, --target <path>`         | Current directory | Target directory to sync into          |
-| `-p, --protect <patterns...>` | —                 | Additional file patterns to never sync |
-| `-d, --debounce <ms>`         | 300               | Debounce interval for file watcher     |
-| `--no-untracked`              | —                 | Exclude untracked files from sync      |
+| Option                        | Default            | Description                                |
+| ----------------------------- | ------------------ | ------------------------------------------ |
+| `-t, --target <path>`         | Auto / current dir | Target directory to checkpoint into        |
+| `-p, --protect <patterns...>` | —                  | Additional file patterns to never sync     |
+| `-d, --debounce <ms>`         | 300                | Debounce interval for file watcher         |
+| `--include-untracked`         | Off                | Include untracked files in checkpoint sync |
+
+When you run `spotlight-testing` or `spotlight-testing on` without a `<worktree>` argument from inside a linked worktree, Spotlight infers the primary checkout as the target. When you pass `<worktree>` explicitly, the target still defaults to the current directory unless you override it with `--target`.
+
+If Spotlight is already running, starting it again replaces the active process. The existing process gets a `SIGTERM`, restores the target checkout, and then the new process takes over.
 
 ### Protected Files
 
 These files are never synced, regardless of git tracking status:
 
 - `.env`, `.env.local`, `.env.chamber`, `.env.ngrok`
+
+Protected files are parked out of the target working tree during checkpoint checkout and then restored, so target-local secrets can intentionally differ from the worktree.
+
+## How It Works
+
+Spotlight works only when the worktree and target share the same Git object database, which is true for linked worktrees from the same repository. While spotlight is running, the target is typically left in detached `HEAD` at the current checkpoint commit.
+
+At a high level:
+
+1. Save the target's original `HEAD` state.
+2. Park target-local protected files such as `.env*`.
+3. Create a checkpoint commit from the worktree.
+4. Check out that checkpoint in the target repository.
+5. Restore protected files.
+6. Repeat on file changes.
+7. Restore the original target `HEAD` state on exit.
 
 ## Programmatic API
 
@@ -65,10 +90,10 @@ import { spotlight, syncOnce, restore } from "spotlight-testing";
 
 // One-shot sync
 const result = syncOnce("/path/to/worktree", "/path/to/target");
-console.log(`Synced ${result.synced} files, deleted ${result.deleted}`);
+console.log(`Checkpoint ${result.commitSha} changed ${result.synced} paths`);
 
 // Watch mode
-await spotlight({
+spotlight({
   worktree: "/path/to/worktree",
   target: "/path/to/target",
   protect: ["custom-local-file.json"],
@@ -89,8 +114,7 @@ This works with Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, Goose, O
 ## Requirements
 
 - Node.js >= 22
-- rsync (pre-installed on macOS and most Linux)
-- macOS (for `fs.watch` recursive support) or Linux with Node 22+
+- macOS (the current watcher relies on `fs.watch({ recursive: true })` via FSEvents)
 
 ## License
 

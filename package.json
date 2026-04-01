@@ -1,7 +1,7 @@
 {
   "name": "spotlight-testing",
   "version": "0.0.1",
-  "description": "Sync git worktree changes into a main repo directory for testing with a single Docker environment",
+  "description": "Checkpoint git worktree changes into a main repo directory for testing with a single Docker environment",
   "keywords": [
     "docker",
     "git",
@@ -47,8 +47,8 @@
     "changeset": "changeset",
     "changeset:version": "changeset version",
     "release": "npm run build && changeset publish",
-    "lint": "oxlint .",
-    "lint:fix": "oxlint --fix .",
+    "lint": "npm exec -- ultracite check",
+    "lint:fix": "npm exec -- ultracite fix",
     "format": "oxfmt --write .",
     "format:check": "oxfmt ."
   },

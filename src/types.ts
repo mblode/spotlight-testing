@@ -11,8 +11,15 @@ export interface SpotlightOptions {
   includeUntracked?: boolean;
 }
 
-export interface SpotlightState {
-  originalBranch: string;
+export interface HeadState {
+  originalHead: string;
+  originalBranch: string | null;
+  isDetached: boolean;
+}
+
+export interface SpotlightState extends HeadState {
+  protect: string[];
+  lastCheckpointSha: string | null;
   stashName: string | null;
   worktreeBranch: string;
   worktreePath: string;
@@ -22,7 +29,24 @@ export interface SpotlightState {
 }
 
 export interface SyncResult {
+  commitSha: string;
   synced: number;
-  deleted: number;
+  changedPaths: string[];
   warnings: string[];
+}
+
+export interface CheckpointOptions {
+  baselineRef?: string;
+  includeUntracked?: boolean;
+  protect?: string[];
+}
+
+export interface ParkedProtectedFile {
+  parkedPath: string;
+  relativePath: string;
+}
+
+export interface ParkedProtectedFiles {
+  files: ParkedProtectedFile[];
+  root: string;
 }

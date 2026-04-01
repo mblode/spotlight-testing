@@ -1,45 +1,99 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { styleText } from "node:util";
+
 import { Command } from "commander";
 
-import { spotlight } from "./spotlight.js";
-import { isLocked, readLockfile, removeLockfile } from "./lockfile.js";
-import { discardChanges, stashPop } from "./git.js";
+import { getMainWorktreeRoot } from "./git.js";
+import { readLockfile } from "./lockfile.js";
+import { restore, spotlight } from "./spotlight.js";
 
 const program = new Command();
+
+const rawArgs = process.argv.slice(2);
+const hadDeprecatedNoUntracked = rawArgs.includes("--no-untracked");
+const argvWithoutDeprecatedFlag = hadDeprecatedNoUntracked
+  ? process.argv.filter((arg) => arg !== "--no-untracked")
+  : process.argv;
+
+const shouldDefaultToOn = (args: string[]): boolean => {
+  const [firstArg] = args;
+
+  if (!firstArg) {
+    return true;
+  }
+
+  if (!firstArg.startsWith("-")) {
+    return false;
+  }
+
+  return (
+    firstArg !== "-h" && firstArg !== "--help" && firstArg !== "-V" && firstArg !== "--version"
+  );
+};
+
+const normalizedArgv = shouldDefaultToOn(argvWithoutDeprecatedFlag.slice(2))
+  ? [...argvWithoutDeprecatedFlag.slice(0, 2), "on", ...argvWithoutDeprecatedFlag.slice(2)]
+  : argvWithoutDeprecatedFlag;
+
+if (hadDeprecatedNoUntracked) {
+  console.warn(
+    styleText(
+      "yellow",
+      "`--no-untracked` is deprecated because tracked-only sync is now the default. Use `--include-untracked` to opt in.",
+    ),
+  );
+}
 
 program
   .name("spotlight-testing")
   .description(
-    "Sync git worktree changes into a main repo directory for testing with a single Docker environment",
+    "Run worktree changes in a repo root by creating checkpoint commits and checking them out in place.",
   )
   .version("0.0.1");
 
 program
   .command("on")
   .description("Start syncing a worktree into the target directory")
-  .argument("<worktree>", "Path to the git worktree to sync from")
-  .option(
-    "-t, --target <path>",
-    "Target directory to sync into (default: current directory)",
-    process.cwd(),
-  )
+  .argument("[worktree]", "Path to the git worktree to sync from")
+  .option("-t, --target <path>", "Target directory to sync into")
   .option("-p, --protect <patterns...>", "Additional file patterns to never sync")
   .option("-d, --debounce <ms>", "Debounce interval in milliseconds", "300")
-  .option("--no-untracked", "Exclude untracked files from sync")
+  .option("--include-untracked", "Include untracked files in checkpoint sync")
   .action(
     (
-      worktree: string,
-      opts: { target: string; protect?: string[]; debounce: string; untracked: boolean },
+      worktree: string | undefined,
+      opts: {
+        debounce: string;
+        includeUntracked?: boolean;
+        protect?: string[];
+        target?: string;
+      },
     ) => {
       try {
+        const worktreePath = resolve(worktree ?? process.cwd());
+        let targetPath: string | null;
+
+        if (opts.target) {
+          targetPath = resolve(opts.target);
+        } else if (worktree) {
+          targetPath = process.cwd();
+        } else {
+          targetPath = getMainWorktreeRoot(worktreePath);
+        }
+
+        if (!targetPath) {
+          throw new Error(
+            "Could not infer the main checkout from the current directory. Run from a linked worktree or pass `--target <path>`.",
+          );
+        }
+
         spotlight({
           debounce: Number.parseInt(opts.debounce, 10),
-          includeUntracked: opts.untracked,
+          includeUntracked: opts.includeUntracked ?? false,
           protect: opts.protect,
-          target: resolve(opts.target),
-          worktree: resolve(worktree),
+          target: resolve(targetPath),
+          worktree: worktreePath,
         });
       } catch (error) {
         console.error(styleText("red", `Error: ${error instanceof Error ? error.message : error}`));
@@ -52,34 +106,28 @@ program
   .command("off")
   .description("Stop a running spotlight and restore the target directory")
   .action(() => {
-    if (!isLocked()) {
+    const state = readLockfile();
+
+    if (!state) {
       console.log("No spotlight is running.");
       return;
     }
 
-    const state = readLockfile();
-    if (!state) {
-      console.log("No spotlight state found.");
-      removeLockfile();
-      return;
-    }
-
-    // Send SIGTERM to the running spotlight process
     try {
       process.kill(state.pid, "SIGTERM");
       console.log(`Sent stop signal to spotlight (PID ${state.pid})`);
     } catch {
-      // Process already dead, clean up manually
-      console.log("Spotlight process not found. Cleaning up...");
+      console.log("Spotlight process not found. Restoring target state...");
+
       try {
-        discardChanges(state.targetPath);
-        if (state.stashName) {
-          stashPop(state.targetPath, state.stashName);
-        }
+        restore(state.targetPath);
       } catch (error) {
-        console.error(styleText("red", `Cleanup error: ${error}`));
+        console.error(
+          styleText("red", `Cleanup error: ${error instanceof Error ? error.message : error}`),
+        );
+        process.exit(1);
       }
-      removeLockfile();
+
       console.log(styleText("bold", "Spotlight OFF"));
     }
   });
@@ -88,26 +136,28 @@ program
   .command("status")
   .description("Show the current spotlight status")
   .action(() => {
-    if (!isLocked()) {
+    const state = readLockfile();
+
+    if (!state) {
       console.log("No spotlight is running.");
       return;
     }
 
-    const state = readLockfile();
-    if (!state) {
-      console.log("No spotlight state found.");
-      return;
-    }
-
     console.log(styleText("bold", "Spotlight is ON"));
-    console.log(`  PID:      ${state.pid}`);
-    console.log(`  Branch:   ${styleText("cyan", state.worktreeBranch)}`);
-    console.log(`  From:     ${state.worktreePath}`);
-    console.log(`  Into:     ${state.targetPath}`);
-    console.log(`  Started:  ${state.startedAt}`);
+    console.log(`  PID:        ${state.pid}`);
+    console.log(`  Branch:     ${styleText("cyan", state.worktreeBranch)}`);
+    console.log(`  From:       ${state.worktreePath}`);
+    console.log(`  Into:       ${state.targetPath}`);
+    console.log(`  Started:    ${state.startedAt}`);
+    console.log(
+      `  Checkpoint: ${state.lastCheckpointSha ? state.lastCheckpointSha.slice(0, 12) : "n/a"}`,
+    );
+    console.log(
+      `  Restore:    ${state.originalBranch ?? `${state.originalHead.slice(0, 12)} (detached)`}`,
+    );
     if (state.stashName) {
-      console.log(`  Stash:    ${state.stashName}`);
+      console.log(`  Stash:      ${state.stashName}`);
     }
   });
 
-program.parse();
+program.parse(normalizedArgv);

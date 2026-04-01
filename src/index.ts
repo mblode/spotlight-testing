@@ -1,3 +1,3 @@
-export type { SpotlightOptions, SpotlightState, SyncResult } from "./types.js";
+export type { HeadState, SpotlightOptions, SpotlightState, SyncResult } from "./types.js";
 export { spotlight, syncOnce, restore } from "./spotlight.js";
-export { getTrackedFiles, getGitBranch, isGitWorktree, isGitRepo } from "./git.js";
+export { getGitBranch, getTrackedFiles, isGitRepo, isGitWorktree } from "./git.js";

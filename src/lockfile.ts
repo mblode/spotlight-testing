@@ -4,11 +4,12 @@ import { join } from "node:path";
 
 import type { SpotlightState } from "./types.js";
 
-const LOCKFILE = join(tmpdir(), "spotlight.lock");
+const DEFAULT_LOCKFILE = join(tmpdir(), "spotlight.lock");
+const getCurrentLockfilePath = (): string => process.env.SPOTLIGHT_LOCKFILE ?? DEFAULT_LOCKFILE;
 
 export const readLockfile = (): SpotlightState | null => {
   try {
-    const content = readFileSync(LOCKFILE, "utf8");
+    const content = readFileSync(getCurrentLockfilePath(), "utf8");
     return JSON.parse(content);
   } catch {
     return null;
@@ -16,7 +17,9 @@ export const readLockfile = (): SpotlightState | null => {
 };
 
 export const isLocked = (): boolean => {
-  if (!existsSync(LOCKFILE)) {
+  const lockfilePath = getCurrentLockfilePath();
+
+  if (!existsSync(lockfilePath)) {
     return false;
   }
 
@@ -32,7 +35,7 @@ export const isLocked = (): boolean => {
       return true;
     } catch {
       // Process is dead, clean up stale lockfile
-      unlinkSync(LOCKFILE);
+      unlinkSync(lockfilePath);
       return false;
     }
   } catch {
@@ -41,15 +44,15 @@ export const isLocked = (): boolean => {
 };
 
 export const writeLockfile = (state: SpotlightState): void => {
-  writeFileSync(LOCKFILE, JSON.stringify(state, null, 2));
+  writeFileSync(getCurrentLockfilePath(), JSON.stringify(state, null, 2));
 };
 
 export const removeLockfile = (): void => {
   try {
-    unlinkSync(LOCKFILE);
+    unlinkSync(getCurrentLockfilePath());
   } catch {
     // ignore
   }
 };
 
-export const getLockfilePath = (): string => LOCKFILE;
+export const getLockfilePath = (): string => getCurrentLockfilePath();

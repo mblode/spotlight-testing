@@ -1,64 +1,55 @@
 import type { FSWatcher } from "node:fs";
 import { watch } from "node:fs";
 
-import { getTrackedFiles } from "./git.js";
-
 export interface WatcherOptions {
-  dir: string;
   debounceMs?: number;
-  includeUntracked?: boolean;
+  dir: string;
   onSync: () => void;
 }
 
-export const createWatcher = (options: WatcherOptions): FSWatcher => {
-  const { dir, debounceMs = 300, includeUntracked = true, onSync } = options;
+const isIgnoredPath = (filename: string): boolean =>
+  filename.includes("node_modules") ||
+  filename.includes(".git/") ||
+  filename.startsWith(".git") ||
+  filename.includes("dist/");
 
-  let trackedSet = new Set(getTrackedFiles(dir, includeUntracked));
+export const createWatcher = (options: WatcherOptions): FSWatcher => {
+  const { debounceMs = 300, dir, onSync } = options;
+
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let hasPending = false;
 
-  // Refresh tracked files periodically
-  const refreshInterval = setInterval(() => {
-    try {
-      trackedSet = new Set(getTrackedFiles(dir, includeUntracked));
-    } catch {
-      // git command failed, keep previous set
-    }
-  }, 30_000);
-
-  const watcher = watch(dir, { recursive: true }, (_event, filename) => {
-    if (!filename) {
-      return;
-    }
-
-    if (
-      filename.includes("node_modules") ||
-      filename.includes(".git/") ||
-      filename.includes("dist/") ||
-      filename.startsWith(".git/")
-    ) {
-      return;
-    }
-
-    if (!trackedSet.has(filename)) {
-      return;
-    }
-
+  const queueSync = (): void => {
     hasPending = true;
 
     if (debounceTimer) {
       clearTimeout(debounceTimer);
     }
+
     debounceTimer = setTimeout(() => {
-      if (hasPending) {
-        hasPending = false;
-        onSync();
+      if (!hasPending) {
+        return;
       }
+
+      hasPending = false;
+      onSync();
     }, debounceMs);
+  };
+
+  const watcher = watch(dir, { recursive: true }, (_event, filename) => {
+    if (!filename) {
+      queueSync();
+      return;
+    }
+
+    if (isIgnoredPath(filename)) {
+      return;
+    }
+
+    queueSync();
   });
 
   watcher.on("close", () => {
-    clearInterval(refreshInterval);
     if (debounceTimer) {
       clearTimeout(debounceTimer);
     }
