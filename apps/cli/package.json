@@ -1,0 +1,68 @@
+{
+  "name": "spotlight-testing",
+  "version": "0.0.1",
+  "description": "Checkpoint git worktree changes into a main repo directory for testing with a single Docker environment",
+  "keywords": [
+    "docker",
+    "git",
+    "spotlight",
+    "sync",
+    "testing",
+    "worktree"
+  ],
+  "homepage": "https://github.com/mblode/spotlight-testing#readme",
+  "bugs": {
+    "url": "https://github.com/mblode/spotlight-testing/issues"
+  },
+  "license": "MIT",
+  "author": "Matthew Blode",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mblode/spotlight-testing.git",
+    "directory": "apps/cli"
+  },
+  "bin": {
+    "spotlight-testing": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE.md"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "start": "node dist/cli.js",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt ."
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.0.0",
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.11",
+    "oxfmt": "^0.42.0",
+    "oxlint": "^1.57.0",
+    "tsdown": "^0.12.0",
+    "typescript": "^5.8.0",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
