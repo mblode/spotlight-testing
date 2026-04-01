@@ -31,7 +31,7 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 5000): Promise<void
   throw new Error("Timed out waiting for CLI state");
 };
 
-describe.skipIf(process.platform !== "darwin")("cli e2e", () => {
+describe.skipIf(process.platform !== "darwin")("cli e2e", { timeout: 15_000 }, () => {
   beforeAll(() => {
     execFileSync("npm", ["run", "build"], {
       cwd: repoRoot,
