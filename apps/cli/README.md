@@ -1,120 +1,118 @@
-# spotlight-testing
+<h1 align="center">spotlight-testing</h1>
 
-Checkpoint git worktree changes into a repo root directory for testing with a single Docker environment.
+<p align="center">Sync git worktree changes into a repo root for testing with a single Docker environment.</p>
 
-## The Problem
+<p align="center">
+  <a href="https://www.npmjs.com/package/spotlight-testing"><img src="https://img.shields.io/npm/v/spotlight-testing.svg" alt="npm version"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
+</p>
 
-When using git worktrees, Docker Compose uses the directory name as the project name. Running `docker compose up` from `~/Code/project-feature-branch` creates containers named `project-feature-branch-*` that conflict with `project-*`. You end up needing separate databases, ports, and docker networks for each worktree.
+- **Checkpoint sync:** Creates temporary commits from your worktree and checks them out in the target directory.
+- **File watching:** Detects changes with `fs.watch` and re-syncs automatically on save.
+- **Protected files:** Keeps `.env`, `.env.local`, and other sensitive files untouched in the target.
+- **Clean restore:** Returns the target to its original branch and HEAD state on exit.
+- **Programmatic API:** Use `spotlight()`, `syncOnce()`, and `restore()` directly from Node.js.
 
-## The Solution
-
-Spotlight creates checkpoint commits from a worktree and checks them out in your main repo directory. You run Docker once from the main directory, and spotlight keeps it up to date with your worktree changes. Hot reload picks up the checked-out checkpoint automatically.
-
-## Installation
+## Install
 
 ```bash
 npm install -g spotlight-testing
 ```
 
-Or use directly with `npx`:
-
-```bash
-npx spotlight-testing --help
-```
+Requires Node.js 22+. macOS only (relies on FSEvents for recursive file watching).
 
 ## Usage
 
+Run from inside a git worktree. The target directory is inferred automatically:
+
 ```bash
-# From inside a linked worktree, infer the main checkout automatically
-cd ~/Code/project-feature-branch
 spotlight-testing
+```
 
-# Or start explicitly from anywhere
-spotlight-testing on ~/Code/project-feature-branch --target ~/Code/project
+Explicitly set the worktree and target:
 
-# Check status
-spotlight-testing status
+```bash
+spotlight-testing on ./feature-branch --target ./main-repo
+```
 
-# Stop and restore the main directory
+Protect additional files from being overwritten:
+
+```bash
+spotlight-testing on --protect "docker-compose.override.yml" "*.local"
+```
+
+Include untracked files in the sync:
+
+```bash
+spotlight-testing on --include-untracked
+```
+
+Stop syncing and restore the target:
+
+```bash
 spotlight-testing off
 ```
 
-### Commands
+Check the current sync status:
 
-| Command                           | Description                                      |
-| --------------------------------- | ------------------------------------------------ |
-| `spotlight-testing`               | Start spotlight from the current linked worktree |
-| `spotlight-testing on <worktree>` | Start checkpointing worktree changes into target |
-| `spotlight-testing off`           | Stop spotlight and restore target directory      |
-| `spotlight-testing status`        | Show current spotlight state                     |
+```bash
+spotlight-testing status
+```
 
-### Options for `spotlight-testing on`
+## Options
 
-| Option                        | Default            | Description                                |
-| ----------------------------- | ------------------ | ------------------------------------------ |
-| `-t, --target <path>`         | Auto / current dir | Target directory to checkpoint into        |
-| `-p, --protect <patterns...>` | —                  | Additional file patterns to never sync     |
-| `-d, --debounce <ms>`         | 300                | Debounce interval for file watcher         |
-| `--include-untracked`         | Off                | Include untracked files in checkpoint sync |
+```
+Usage: spotlight-testing on [options] [worktree]
 
-When you run `spotlight-testing` or `spotlight-testing on` without a `<worktree>` argument from inside a linked worktree, Spotlight infers the primary checkout as the target. When you pass `<worktree>` explicitly, the target still defaults to the current directory unless you override it with `--target`.
+Arguments:
+  worktree                     Path to the git worktree to sync from
 
-If Spotlight is already running, starting it again replaces the active process. The existing process gets a `SIGTERM`, restores the target checkout, and then the new process takes over.
+Options:
+  -t, --target <path>          Target directory to sync into
+  -p, --protect <patterns...>  Additional file patterns to never sync
+  -d, --debounce <ms>          Debounce interval in milliseconds (default: 300)
+  --include-untracked          Include untracked files in checkpoint sync
+  -h, --help                   display help for command
+```
 
-### Protected Files
-
-These files are never synced, regardless of git tracking status:
-
-- `.env`, `.env.local`, `.env.chamber`, `.env.ngrok`
-
-Protected files are parked out of the target working tree during checkpoint checkout and then restored, so target-local secrets can intentionally differ from the worktree.
-
-## How It Works
-
-Spotlight works only when the worktree and target share the same Git object database, which is true for linked worktrees from the same repository. While spotlight is running, the target is typically left in detached `HEAD` at the current checkpoint commit.
-
-At a high level:
-
-1. Save the target's original `HEAD` state.
-2. Park target-local protected files such as `.env*`.
-3. Create a checkpoint commit from the worktree.
-4. Check out that checkpoint in the target repository.
-5. Restore protected files.
-6. Repeat on file changes.
-7. Restore the original target `HEAD` state on exit.
-
-## Programmatic API
+## API
 
 ```typescript
 import { spotlight, syncOnce, restore } from "spotlight-testing";
 
-// One-shot sync
-const result = syncOnce("/path/to/worktree", "/path/to/target");
-console.log(`Checkpoint ${result.commitSha} changed ${result.synced} paths`);
-
-// Watch mode
+// Watch and sync continuously
 spotlight({
-  worktree: "/path/to/worktree",
-  target: "/path/to/target",
-  protect: ["custom-local-file.json"],
-  debounce: 500,
+  worktree: "/path/to/feature-branch",
+  target: "/path/to/main-repo",
+  protect: [".env*"],
+  debounce: 300,
 });
+
+// One-shot sync
+const result = await syncOnce({
+  worktree: "/path/to/feature-branch",
+  target: "/path/to/main-repo",
+});
+
+// Restore the target to its original state
+restore("/path/to/main-repo");
 ```
 
-## Usage with AI Agents
+## How It Works
 
-Add the skill to your AI coding assistant:
-
-```bash
-npx skills add mblode/spotlight-testing
-```
-
-This works with Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, Goose, OpenCode, and Windsurf.
+1. Verifies the worktree and target share the same Git object database.
+2. Saves the target directory's original HEAD state.
+3. Parks protected files (`.env*`) out of the target working tree.
+4. Creates a checkpoint commit from the worktree and checks it out in the target.
+5. Watches the worktree for changes with `fs.watch({ recursive: true })`.
+6. On each change, creates a new checkpoint and checks it out in the target.
+7. On exit (Ctrl+C), restores the original HEAD state and protected files.
 
 ## Requirements
 
-- Node.js >= 22
-- macOS (the current watcher relies on `fs.watch({ recursive: true })` via FSEvents)
+- Node.js 22+
+- macOS (FSEvents required for recursive `fs.watch`)
+- Worktree and target must share the same Git common object database
 
 ## License
 
