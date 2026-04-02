@@ -26,7 +26,7 @@ You'll then have access to a terminal in your repository root directory in the C
 
 When you turn spotlight mode off, your original state in your repository root will be restored.
 
-If your repository root already has local changes, Spotlight preserves them by stashing them in the target repository before checkout and restoring that stash when spotlight mode ends.
+Spotlight saves a checkpoint of the repository root when spotlight starts, then restores that checkpoint when spotlight ends. The workspace checkpoint and the target-root checkpoint are separate refs, so tracked files, non-ignored untracked files, and the index return to their startup state.
 
 ![Spotlight testing](https://mintcdn.com/conductor-7a9c6b47/EyESeSTp_x0b2ktg/images/spotlight.gif?s=e8d1f0ddf6c32f3f91f45631c46fff85)
 
@@ -34,7 +34,9 @@ If your repository root already has local changes, Spotlight preserves them by s
 
 ## Hot reloading
 
-Enabling spotlight mode adds a file watcher to your workspace. Whenever changes are detected, Conductor will create a [checkpoint](/core/checkpoints) commit of your workspace and check it out in your repository root.
+Enabling spotlight mode adds a file watcher to your workspace. Whenever changes are detected, Conductor creates a named checkpoint ref from your workspace and restores it into your repository root.
+
+The watcher behaves like a serialized event queue: rapid bursts of changes are coalesced into the next sync cycle instead of triggering overlapping checkouts.
 
 If your development server supports hot reloading, you'll see workspace changes reflected without having to take any manual action.
 
@@ -50,11 +52,11 @@ Spotlight testing is a great fit for:
 
 ### How does Spotlight testing work?
 
-Spotlight testing works by creating checkpoint commits from your workspace and checking them out in your repository root directory.
+Spotlight testing works by creating checkpoint refs from your workspace and restoring them into your repository root directory.
 
-_Only_ files that are tracked in git are synced back to your repository root directory by default. That means build artifacts (like `node_modules`) are not copied back to your repository root directory unless Spotlight explicitly includes them.
+By default, spotlight includes untracked files in the workspace checkpoint so the target directory matches the workspace more closely.
 
-If your repository root already has local changes, Spotlight preserves them by creating a temporary stash in the target repository before checkout and restoring it when Spotlight stops.
+If your repository root already has local changes, Spotlight captures the root state at startup and restores it when Spotlight stops. That restore is destructive and uses Git operations equivalent to a hard reset plus tree and index restoration. Ignored files are left in place rather than checkpointed or rolled back.
 
 ### Why aren't changes in my repository root directory reflected in my workspace?
 
@@ -64,8 +66,8 @@ We recommend editing changes in your workspace directly to see them reflected in
 
 ### How can I fix a "Cannot start Spotlight" error?
 
-If your workspace or repository root have a rebase or merge in progress, Spotlight mode will not work.
+If your workspace or repository root have a rebase, merge, cherry-pick, or revert in progress, Spotlight mode will not work.
 
-You can fix this by running `git rebase --continue` or `git merge --continue` to complete the operation (or `--abort` to cancel).
+You can fix this by completing or aborting the operation before starting Spotlight.
 
-Make sure you run the above command in your workspace and repository root directories.
+Make sure you run the command in your workspace and repository root directories.

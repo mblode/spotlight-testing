@@ -1,44 +1,60 @@
 # spotlight-testing
 
-Sync git worktree changes into a repo root for testing with a single Docker environment.
+Run your worktree changes in the repo root, without rebuilding your whole setup from scratch.
 
-## Packages
+## Why
 
-| Package | Description | Version |
-|---------|-------------|---------|
-| [`spotlight-testing`](apps/cli) | CLI and programmatic API for checkpoint-based worktree sync | [![npm](https://img.shields.io/npm/v/spotlight-testing.svg)](https://www.npmjs.com/package/spotlight-testing) |
+Use `spotlight-testing` when your app only really works from the repo root.
 
-## Getting Started
+It helps when your first build is slow, your dev setup depends on one shared Docker or database setup, or you want to test worktree changes without spinning up another full environment.
 
-```bash
-git clone https://github.com/mblode/spotlight-testing.git
-cd spotlight-testing
-npm install
-npm run build
-```
+## How
 
-Requires Node.js 22+.
+`spotlight-testing` creates checkpoint refs from your worktree and restores them into the repo root.
 
-## Development
+It watches for changes and updates the repo root on save, so hot reload can keep doing its job.
 
-```bash
-npm run build         # Build all packages
-npm run dev           # Watch mode
-npm run test          # Run all tests
-npm run check-types   # Type check all packages
-npm run lint          # Lint all packages
-npm run format        # Format all packages
-```
+It is one-way: edit in the worktree, test in the repo root.
 
-## Release
+When you stop, it restores the repo root to the state it had before Spotlight started. Tracked, staged, and untracked changes in the repo root are captured in that restore checkpoint and brought back on exit. Ignored files stay untouched.
 
-This project uses [changesets](https://github.com/changesets/changesets) for versioning and OIDC trusted publishing for npm releases.
+## What
+
+Install:
 
 ```bash
-npx changeset         # Create a changeset
+npm install -g spotlight-testing
 ```
 
-Merging to `main` triggers the release workflow automatically.
+Requires Node.js 22+ and macOS.
+
+Start from inside a linked worktree:
+
+```bash
+spotlight-testing
+```
+
+If Spotlight cannot infer the repo root, pass it explicitly:
+
+```bash
+spotlight-testing on --target ../my-repo
+```
+
+Stop and restore the repo root:
+
+```bash
+spotlight-testing off
+```
+
+Check whether Spotlight is running:
+
+```bash
+spotlight-testing status
+```
+
+`spotlight-testing on` and `spotlight-testing off` stay quiet by default. Run `spotlight-testing status` when you need the detailed active-session view.
+
+Untracked, non-ignored files in the worktree are included in checkpoint sync by default. There is no stash-based preserve flow and no `--protect` or `--include-untracked` flag.
 
 ## License
 

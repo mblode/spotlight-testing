@@ -1,39 +1,82 @@
-import type { FSWatcher } from "node:fs";
 import { watch } from "node:fs";
 
-export interface WatcherOptions {
-  debounceMs?: number;
-  dir: string;
-  onSync: () => void;
+export interface WatcherHandle {
+  close: () => void;
 }
 
-const isIgnoredPath = (filename: string): boolean =>
-  filename.includes("node_modules") ||
-  filename.includes(".git/") ||
-  filename.startsWith(".git") ||
-  filename.includes("dist/");
+interface WatcherOptions {
+  debounceMs?: number;
+  dir: string;
+  onSync: () => Promise<void> | void;
+}
 
-export const createWatcher = (options: WatcherOptions): FSWatcher => {
+const isIgnoredPath = (filePath: string): boolean => {
+  const normalized = filePath.replaceAll("\\", "/");
+
+  return (
+    normalized.startsWith(".git") ||
+    normalized.includes("/.git/") ||
+    normalized.startsWith(".context/") ||
+    normalized.includes("/.context/") ||
+    normalized.startsWith("dist/") ||
+    normalized.includes("/dist/") ||
+    normalized.startsWith("node_modules/") ||
+    normalized.includes("/node_modules/") ||
+    normalized.includes(".tmp.")
+  );
+};
+
+export const createWatcher = (options: WatcherOptions): WatcherHandle => {
   const { debounceMs = 300, dir, onSync } = options;
-
+  let closed = false;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let hasPending = false;
+  let pending = false;
+  let running = false;
 
-  const queueSync = (): void => {
-    hasPending = true;
+  const flush = async (): Promise<void> => {
+    if (closed || running || !pending) {
+      return;
+    }
+
+    pending = false;
+    running = true;
+
+    try {
+      await onSync();
+    } finally {
+      running = false;
+
+      if (pending) {
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+        }
+
+        debounceTimer = setTimeout(() => {
+          debounceTimer = null;
+          void flush();
+        }, debounceMs);
+      }
+    }
+  };
+
+  const scheduleFlush = (): void => {
+    if (closed || running) {
+      return;
+    }
 
     if (debounceTimer) {
       clearTimeout(debounceTimer);
     }
 
     debounceTimer = setTimeout(() => {
-      if (!hasPending) {
-        return;
-      }
-
-      hasPending = false;
-      onSync();
+      debounceTimer = null;
+      void flush();
     }, debounceMs);
+  };
+
+  const queueSync = (): void => {
+    pending = true;
+    scheduleFlush();
   };
 
   const watcher = watch(dir, { recursive: true }, (_event, filename) => {
@@ -42,18 +85,22 @@ export const createWatcher = (options: WatcherOptions): FSWatcher => {
       return;
     }
 
-    if (isIgnoredPath(filename)) {
+    if (isIgnoredPath(String(filename))) {
       return;
     }
 
     queueSync();
   });
 
-  watcher.on("close", () => {
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-    }
-  });
+  return {
+    close: (): void => {
+      closed = true;
 
-  return watcher;
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+
+      watcher.close();
+    },
+  };
 };

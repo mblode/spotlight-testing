@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -11,13 +11,13 @@ const GIT_ENV = {
   GIT_COMMITTER_NAME: "Test",
 };
 
-export interface RepoFixture {
+interface RepoFixture {
   parent: string;
   root: string;
   worktree: string;
 }
 
-export interface RepoOnlyFixture {
+interface RepoOnlyFixture {
   parent: string;
   root: string;
 }
@@ -46,6 +46,28 @@ export const writeTextFile = (root: string, relativePath: string, contents: stri
 
 export const readTextFile = (root: string, relativePath: string): string =>
   readFileSync(join(root, relativePath), "utf8").trim();
+
+export const readTextFileIfExists = (root: string, relativePath: string): string | null => {
+  const filePath = join(root, relativePath);
+  return existsSync(filePath) ? readFileSync(filePath, "utf8").trim() : null;
+};
+
+export const readGitTree = (cwd: string, ref: string): string[] =>
+  execGit(cwd, ["ls-tree", "-r", "--name-only", ref]).split("\n").filter(Boolean);
+
+export const readCachedDiffNames = (cwd: string): string[] =>
+  execGit(cwd, ["diff", "--cached", "--name-only"]).split("\n").filter(Boolean);
+
+export const readGitCommonDir = (cwd: string): string =>
+  execGit(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+
+export const readGitPath = (cwd: string, relativePath: string): string =>
+  execGit(cwd, ["rev-parse", "--path-format=absolute", "--git-path", relativePath]);
+
+export const getCheckpointNamespaceRefs = (cwd: string): string[] =>
+  execGit(cwd, ["for-each-ref", "refs/conductor-checkpoints", "--format=%(refname)"])
+    .split("\n")
+    .filter(Boolean);
 
 const DEFAULT_REPO_FILES: Record<string, string> = { "app.txt": "initial\n" };
 

@@ -7,10 +7,10 @@
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
 </p>
 
-- **Checkpoint sync:** Creates temporary commits from your worktree and checks them out in the target directory.
-- **File watching:** Detects changes with `fs.watch` and re-syncs automatically on save.
-- **Protected files:** Keeps `.env`, `.env.local`, and other sensitive files untouched in the target.
-- **Clean restore:** Returns the target to its original branch and HEAD state on exit, and reapplies any temporary target stash created at startup.
+- **Checkpoint refs:** Captures workspace state into named Git checkpoint refs and applies them to the target directory.
+- **Destructive restore:** Saves the target root at startup and restores it on exit with a hard reset-style checkpoint restore.
+- **Untracked by default:** Workspace untracked files are included in checkpoints, while ignored files stay in the target.
+- **Watchexec-style watching:** Serializes file events and coalesces bursts of changes into a single follow-up sync.
 - **Programmatic API:** Use `spotlight()`, `syncOnce()`, and `restore()` directly from Node.js.
 
 ## Install
@@ -19,7 +19,7 @@
 npm install -g spotlight-testing
 ```
 
-Requires Node.js 22+. macOS only (relies on FSEvents for recursive file watching).
+Requires Node.js 22+. macOS only.
 
 ## Usage
 
@@ -35,18 +35,6 @@ Explicitly set the worktree and target:
 spotlight-testing on ./feature-branch --target ./main-repo
 ```
 
-Protect additional files from being overwritten:
-
-```bash
-spotlight-testing on --protect "docker-compose.override.yml" "*.local"
-```
-
-Include untracked files in the sync:
-
-```bash
-spotlight-testing on --include-untracked
-```
-
 Stop syncing and restore the target:
 
 ```bash
@@ -59,15 +47,17 @@ Check the current sync status:
 spotlight-testing status
 ```
 
+`on` and `off` keep default output minimal. Use `status` when you need the full active-session details.
+
 ## Target State
 
-`spotlight-testing on` is tolerant of a dirty target checkout. If the target already has tracked or untracked changes, Spotlight creates a temporary `spotlight-auto-*` git stash in the target repository before checking out the checkpoint commit. That stash is popped when Spotlight stops, so the target returns to its previous branch or detached HEAD plus its prior working tree changes.
+`spotlight-testing on` checkpoints the target root before spotlight starts. That checkpoint is restored when spotlight stops, so tracked files, non-ignored untracked files, and the index return to their startup state.
 
-You can inspect that temporary stash from the target checkout with `git stash list`. The stash lives in the target repo's normal stash stack at `git rev-parse --git-path refs/stash`.
+Workspace changes are synced into the target through named Git checkpoint refs. By default, untracked files are included in the workspace checkpoint so the target sees the same working tree content as the worktree.
 
-Protected files such as `.env` and `.env.local` are handled separately: they are parked out of the way before checkout and then restored, rather than being included in the temporary stash.
+Checkpoint restore is destructive. The target is rewritten from the saved checkpoint using Git operations equivalent to `reset --hard`, `read-tree -u`, and `clean -fd`, followed by restoration of the saved index tree. Ignored files are left in place rather than checkpointed or rolled back.
 
-`syncOnce()` is stricter than the long-running watcher. It requires a clean target working tree and throws instead of auto-stashing.
+`syncOnce()` follows the same checkpoint model in a one-shot destructive pass.
 
 ## Options
 
@@ -79,9 +69,7 @@ Arguments:
 
 Options:
   -t, --target <path>          Target directory to sync into
-  -p, --protect <patterns...>  Additional file patterns to never sync
   -d, --debounce <ms>          Debounce interval in milliseconds (default: 300)
-  --include-untracked          Include untracked files in checkpoint sync
   -h, --help                   display help for command
 ```
 
@@ -94,15 +82,11 @@ import { spotlight, syncOnce, restore } from "spotlight-testing";
 spotlight({
   worktree: "/path/to/feature-branch",
   target: "/path/to/main-repo",
-  protect: [".env*"],
   debounce: 300,
 });
 
 // One-shot sync
-const result = await syncOnce({
-  worktree: "/path/to/feature-branch",
-  target: "/path/to/main-repo",
-});
+const result = syncOnce("/path/to/feature-branch", "/path/to/main-repo");
 
 // Restore the target to its original state
 restore("/path/to/main-repo");
@@ -111,19 +95,17 @@ restore("/path/to/main-repo");
 ## How It Works
 
 1. Verifies the worktree and target share the same Git object database.
-2. Saves the target directory's original HEAD state.
-3. Parks protected files (`.env*`) out of the target working tree.
-4. If the target has local changes, creates a temporary `spotlight-auto-*` stash in the target repo.
-5. Creates a checkpoint commit from the worktree and checks it out in the target.
-6. Restores protected files in the target checkout.
-7. Watches the worktree for changes with `fs.watch({ recursive: true })`.
-8. On each change, creates a new checkpoint and checks it out in the target.
-9. On exit (Ctrl+C), restores the original HEAD state, reapplies the temporary stash if one was created, and restores protected files.
+2. Saves a checkpoint of the target root before spotlight starts.
+3. Creates a named checkpoint ref from the worktree.
+4. Restores the workspace checkpoint into the target with Conductor-style destructive Git operations.
+5. Watches the worktree with a serialized change queue that behaves like `watchexec`.
+6. Coalesces bursts of changes into the next checkpoint/restore cycle.
+7. On exit, restores the saved target-root checkpoint.
 
 ## Requirements
 
 - Node.js 22+
-- macOS (FSEvents required for recursive `fs.watch`)
+- macOS
 - Worktree and target must share the same Git common object database
 
 ## License

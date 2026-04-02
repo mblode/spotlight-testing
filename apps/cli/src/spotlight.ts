@@ -1,41 +1,70 @@
 import { resolve } from "node:path";
-import { styleText } from "node:util";
 
-import { createCheckpoint } from "./checkpoint.js";
 import {
-  checkoutDetached,
+  deleteCheckpoint,
+  getCheckpointChangedPaths,
+  getCheckpointCommit,
+  readCheckpointMetadata,
+  restoreCheckpoint,
+  saveCheckpoint,
+} from "./checkpointer.js";
+import {
   getGitBranch,
-  getHeadState,
-  gitPath,
+  getGitBusyState,
+  getGitRoot,
+  getHeadLabel,
   getShortSha,
-  hasChanges,
   isGitRepo,
-  isMergeInProgress,
-  isRebaseInProgress,
   isSameRepo,
-  restoreHeadState,
-  stash,
-  stashPop,
 } from "./git.js";
-import { isLocked, readLockfile, removeLockfile, writeLockfile } from "./lockfile.js";
-import { buildSyncResult, parkProtectedFiles, restoreProtectedFiles } from "./sync.js";
+import {
+  isLocked,
+  readLockfile,
+  removeLockfile,
+  waitForLockfileRelease,
+  writeLockfile,
+} from "./lockfile.js";
+import { formatCommit, showActivity, showError, showInfo, showSuccess } from "./output.js";
 import type { SpotlightOptions, SpotlightState, SyncResult } from "./types.js";
 import { createWatcher } from "./watcher.js";
+import type { WatcherHandle } from "./watcher.js";
 
 // eslint-disable-next-line no-empty-function -- intentional keepalive noop
 const noop = () => {};
-const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
-const LOCK_REPLACEMENT_TIMEOUT_MS = 10_000;
-const LOCK_REPLACEMENT_POLL_MS = 50;
+const LOCK_SCHEMA_VERSION = 2;
+const WATCH_BACKEND = "fs.watch(serialized)";
 
-const timestamp = (): string => new Date().toLocaleTimeString("en-AU", { hour12: false });
+interface NormalizedPaths {
+  target: string;
+  worktree: string;
+}
 
-const log = (msg: string): void => {
-  console.log(styleText("dim", `[${timestamp()}]`), msg);
-};
+interface CheckpointDiff {
+  changedPaths: string[];
+  changedState: boolean;
+}
 
-const sleep = (ms: number): void => {
-  Atomics.wait(sleepBuffer, 0, 0, ms);
+const formatBusyState = (busyState: ReturnType<typeof getGitBusyState>): string => {
+  switch (busyState) {
+    case "busy:rebase": {
+      return "a rebase is in progress";
+    }
+    case "busy:merge": {
+      return "a merge is in progress";
+    }
+    case "busy:cherry-pick": {
+      return "a cherry-pick is in progress";
+    }
+    case "busy:revert": {
+      return "a revert is in progress";
+    }
+    case "clean": {
+      return "clean";
+    }
+    default: {
+      return "unknown Git state";
+    }
+  }
 };
 
 const getWorktreeLabel = (cwd: string): string => {
@@ -43,15 +72,25 @@ const getWorktreeLabel = (cwd: string): string => {
   return branch === "HEAD" ? "detached" : branch;
 };
 
+const getRepoRoot = (dir: string, label: string): string => {
+  if (!isGitRepo(dir)) {
+    throw new Error(`${label} is not a git repository: ${dir}`);
+  }
+
+  return getGitRoot(dir);
+};
+
+const getNormalizedPaths = (worktreePath: string, targetPath: string): NormalizedPaths => {
+  const worktree = getRepoRoot(worktreePath, "Worktree");
+  const target = getRepoRoot(targetPath, "Target");
+
+  return {
+    target,
+    worktree,
+  };
+};
+
 const ensureReadyForSpotlight = (worktree: string, target: string): void => {
-  if (!isGitRepo(worktree)) {
-    throw new Error(`Not a git repository or worktree: ${worktree}`);
-  }
-
-  if (!isGitRepo(target)) {
-    throw new Error(`Target is not a git repository: ${target}`);
-  }
-
   if (worktree === target) {
     throw new Error("Worktree and target must be different directories");
   }
@@ -60,60 +99,75 @@ const ensureReadyForSpotlight = (worktree: string, target: string): void => {
     throw new Error("Worktree and target must share the same git object database");
   }
 
-  if (isRebaseInProgress(worktree) || isMergeInProgress(worktree)) {
-    throw new Error(
-      "Cannot start Spotlight: rebase or merge in progress in worktree. Run `git rebase --continue` or `git merge --continue` to complete, or `--abort` to cancel.",
-    );
+  const worktreeBusyState = getGitBusyState(worktree);
+  if (worktreeBusyState !== "clean") {
+    throw new Error(`Cannot start Spotlight: ${formatBusyState(worktreeBusyState)} in worktree.`);
   }
 
-  if (isRebaseInProgress(target) || isMergeInProgress(target)) {
-    throw new Error(
-      "Cannot start Spotlight: rebase or merge in progress in target. Run `git rebase --continue` or `git merge --continue` to complete, or `--abort` to cancel.",
-    );
+  const targetBusyState = getGitBusyState(target);
+  if (targetBusyState !== "clean") {
+    throw new Error(`Cannot start Spotlight: ${formatBusyState(targetBusyState)} in target.`);
   }
+};
+
+const ensureCheckpointsDeleted = (cwd: string, checkpointIds: string[]): void => {
+  for (const checkpointId of checkpointIds) {
+    try {
+      deleteCheckpoint(cwd, checkpointId);
+    } catch {
+      // Ignore checkpoint cleanup failures during shutdown.
+    }
+  }
+};
+
+const checkpointStateChanged = (
+  cwd: string,
+  previousRef: string,
+  nextRef: string,
+): CheckpointDiff => {
+  const previousMetadata = readCheckpointMetadata(cwd, previousRef);
+  const nextMetadata = readCheckpointMetadata(cwd, nextRef);
+
+  return {
+    changedPaths: getCheckpointChangedPaths(cwd, previousRef, nextRef),
+    changedState:
+      previousMetadata.head !== nextMetadata.head ||
+      previousMetadata.indexTree !== nextMetadata.indexTree ||
+      previousMetadata.worktreeTree !== nextMetadata.worktreeTree,
+  };
+};
+
+const applyWorkspaceCheckpoint = (
+  worktree: string,
+  target: string,
+  workspaceCheckpointId: string,
+  previousRef: string,
+): SyncResult => {
+  saveCheckpoint(worktree, { force: true, id: workspaceCheckpointId });
+  const checkpointCommit = getCheckpointCommit(worktree, workspaceCheckpointId);
+  const diff = checkpointStateChanged(target, previousRef, checkpointCommit);
+
+  if (diff.changedState) {
+    restoreCheckpoint(target, workspaceCheckpointId);
+  }
+
+  return {
+    changedPaths: diff.changedPaths,
+    changedState: diff.changedState,
+    checkpointCommit,
+    checkpointId: workspaceCheckpointId,
+    synced: diff.changedPaths.length,
+  };
 };
 
 const restoreFromState = (state: SpotlightState): string => {
-  let restoredTarget = "";
-  const parked = parkProtectedFiles(state.targetPath, state.protect);
-
-  try {
-    restoredTarget = restoreHeadState(state.targetPath, state);
-
-    if (state.stashName) {
-      stashPop(state.targetPath, state.stashName);
-    }
-  } finally {
-    restoreProtectedFiles(state.targetPath, parked);
-  }
-
+  restoreCheckpoint(state.targetPath, state.targetCheckpointId);
+  ensureCheckpointsDeleted(state.targetPath, [
+    state.workspaceCheckpointId,
+    state.targetCheckpointId,
+  ]);
   removeLockfile();
-  return restoredTarget;
-};
-
-const waitForSpotlightToStop = (
-  expectedPid: number,
-  timeoutMs = LOCK_REPLACEMENT_TIMEOUT_MS,
-): void => {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    if (!isLocked()) {
-      return;
-    }
-
-    const active = readLockfile();
-    if (!active || active.pid !== expectedPid) {
-      return;
-    }
-
-    sleep(LOCK_REPLACEMENT_POLL_MS);
-  }
-
-  const active = readLockfile();
-  throw new Error(
-    `Timed out waiting for spotlight to stop${active ? ` (PID ${active.pid}, syncing ${active.worktreePath})` : ""}.`,
-  );
+  return state.targetRestoreLabel;
 };
 
 const replaceRunningSpotlight = (): void => {
@@ -127,7 +181,7 @@ const replaceRunningSpotlight = (): void => {
     throw new Error("Spotlight is already active in this process.");
   }
 
-  log(`Replacing spotlight from ${existing.worktreePath} (PID ${existing.pid})...`);
+  showActivity(`Replacing spotlight from ${existing.worktreePath} (PID ${existing.pid})...`);
 
   try {
     process.kill(existing.pid, "SIGTERM");
@@ -137,39 +191,68 @@ const replaceRunningSpotlight = (): void => {
     }
   }
 
-  waitForSpotlightToStop(existing.pid);
+  waitForLockfileRelease(existing.pid);
 };
 
-/** Run a one-time sync from worktree to target */
-export const syncOnce = (
-  worktreePath: string,
-  targetPath: string,
-  protect: string[] = [],
-  includeUntracked = false,
-): SyncResult => {
-  const worktree = resolve(worktreePath);
-  const target = resolve(targetPath);
+const shouldSkipSync = (worktree: string, target: string): boolean => {
+  const worktreeBusyState = getGitBusyState(worktree);
+  if (worktreeBusyState !== "clean") {
+    showActivity(`Skipping sync: ${formatBusyState(worktreeBusyState)} in worktree`);
+    return true;
+  }
+
+  const targetBusyState = getGitBusyState(target);
+  if (targetBusyState !== "clean") {
+    showActivity(`Skipping sync: ${formatBusyState(targetBusyState)} in target`);
+    return true;
+  }
+
+  return false;
+};
+
+export const syncOnce = (worktreePath: string, targetPath: string): SyncResult => {
+  const { target, worktree } = getNormalizedPaths(resolve(worktreePath), resolve(targetPath));
 
   ensureReadyForSpotlight(worktree, target);
 
-  const originalState = getHeadState(target);
-  const commitSha = createCheckpoint(worktree, { includeUntracked, protect });
-  const parked = parkProtectedFiles(target, protect);
+  const suffix = `${Math.floor(Date.now() / 1000)}-${process.pid}`;
+  const targetCheckpointId = `cp-sync-target-${suffix}`;
+  const workspaceCheckpointId = `cp-sync-workspace-${suffix}`;
+  let targetCheckpointSaved = false;
+  let workspaceCheckpointSaved = false;
+  let completed = false;
 
   try {
-    if (hasChanges(target)) {
-      throw new Error("syncOnce requires a clean target working tree");
+    saveCheckpoint(target, { id: targetCheckpointId });
+    targetCheckpointSaved = true;
+
+    const targetCheckpointCommit = getCheckpointCommit(target, targetCheckpointId);
+    const result = applyWorkspaceCheckpoint(
+      worktree,
+      target,
+      workspaceCheckpointId,
+      targetCheckpointCommit,
+    );
+    workspaceCheckpointSaved = true;
+    completed = true;
+    return result;
+  } catch (error) {
+    if (targetCheckpointSaved) {
+      try {
+        restoreCheckpoint(target, targetCheckpointId);
+      } catch {
+        // Ignore rollback failures while surfacing the original sync error.
+      }
     }
 
-    checkoutDetached(target, commitSha, true);
+    throw error;
   } finally {
-    restoreProtectedFiles(target, parked);
+    if (completed || targetCheckpointSaved || workspaceCheckpointSaved) {
+      ensureCheckpointsDeleted(target, [workspaceCheckpointId, targetCheckpointId]);
+    }
   }
-
-  return buildSyncResult(target, originalState.originalHead, commitSha, protect);
 };
 
-/** Restore the target directory to its pre-spotlight state */
 export const restore = (targetPath: string): void => {
   const state = readLockfile();
 
@@ -177,20 +260,21 @@ export const restore = (targetPath: string): void => {
     throw new Error("No spotlight state found. Nothing to restore.");
   }
 
-  if (resolve(targetPath) !== state.targetPath) {
+  const target = isGitRepo(targetPath) ? getGitRoot(targetPath) : resolve(targetPath);
+
+  if (target !== state.targetPath) {
     throw new Error(`Lockfile target mismatch: expected ${state.targetPath}`);
   }
 
   restoreFromState(state);
 };
 
-/** Start spotlight: watch a worktree and sync changes into the target */
 export const spotlight = (options: SpotlightOptions): void => {
-  const worktree = resolve(options.worktree);
-  const target = resolve(options.target);
-  const protect = options.protect ?? [];
+  const { target, worktree } = getNormalizedPaths(
+    resolve(options.worktree),
+    resolve(options.target),
+  );
   const debounce = options.debounce ?? 300;
-  const includeUntracked = options.includeUntracked ?? false;
 
   ensureReadyForSpotlight(worktree, target);
 
@@ -198,72 +282,115 @@ export const spotlight = (options: SpotlightOptions): void => {
     replaceRunningSpotlight();
   }
 
-  const originalState = getHeadState(target);
+  const checkpointSuffix = `${Math.floor(Date.now() / 1000)}-${process.pid}`;
+  const targetCheckpointId = `cp-target-restore-${checkpointSuffix}`;
+  const workspaceCheckpointId = `cp-spotlight-${checkpointSuffix}`;
   const worktreeBranch = getWorktreeLabel(worktree);
-  let stashName: string | null = null;
+  const targetRestoreLabel = getHeadLabel(target);
   let state: SpotlightState | null = null;
+  let targetCheckpointSaved = false;
+  let workspaceCheckpointSaved = false;
+  let cleaningUp = false;
+  let keepAlive: ReturnType<typeof setInterval> | null = null;
+  let watcher: WatcherHandle | null = null;
+  showInfo("Starting spotlight...");
 
-  const initialCheckpoint = createCheckpoint(worktree, { includeUntracked, protect });
-  const initialParked = parkProtectedFiles(target, protect);
+  const cleanup = (): void => {
+    if (cleaningUp) {
+      return;
+    }
+
+    cleaningUp = true;
+    showInfo("Stopping spotlight...");
+
+    if (keepAlive) {
+      clearInterval(keepAlive);
+    }
+
+    try {
+      watcher?.close();
+    } catch {
+      // Ignore watcher shutdown failures so restore cleanup still runs.
+    }
+
+    try {
+      if (state) {
+        restoreFromState(state);
+      } else if (targetCheckpointSaved) {
+        restoreCheckpoint(target, targetCheckpointId);
+        ensureCheckpointsDeleted(target, [workspaceCheckpointId, targetCheckpointId]);
+        removeLockfile();
+      }
+    } catch (error) {
+      showError(`Cleanup error: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+
+    showSuccess("Spotlight stopped");
+  };
+
+  const handleSigint = (): void => {
+    cleanup();
+    process.exit(0);
+  };
+
+  const handleSigterm = (): void => {
+    cleanup();
+    process.exit(0);
+  };
+
+  process.on("SIGINT", handleSigint);
+  process.on("SIGTERM", handleSigterm);
 
   try {
-    if (hasChanges(target)) {
-      log(`Stashing target changes in ${target} before spotlight...`);
-      stashName = stash(target, true);
-      if (stashName) {
-        log(`Target stash: ${stashName} (${gitPath(target, "refs/stash")})`);
+    saveCheckpoint(target, { id: targetCheckpointId });
+    targetCheckpointSaved = true;
+
+    const initialResult = applyWorkspaceCheckpoint(
+      worktree,
+      target,
+      workspaceCheckpointId,
+      getCheckpointCommit(target, targetCheckpointId),
+    );
+    workspaceCheckpointSaved = true;
+
+    state = {
+      lastSyncAt: new Date().toISOString(),
+      pid: process.pid,
+      schemaVersion: LOCK_SCHEMA_VERSION,
+      startedAt: new Date().toISOString(),
+      targetCheckpointId,
+      targetPath: target,
+      targetRestoreLabel,
+      watchBackend: WATCH_BACKEND,
+      workspaceCheckpointCommit: initialResult.checkpointCommit,
+      workspaceCheckpointId,
+      worktreeBranch,
+      worktreePath: worktree,
+    };
+
+    writeLockfile(state);
+    showSuccess("Spotlight started");
+  } catch (error) {
+    process.off("SIGINT", handleSigint);
+    process.off("SIGTERM", handleSigterm);
+
+    if (targetCheckpointSaved) {
+      try {
+        restoreCheckpoint(target, targetCheckpointId);
+      } catch {
+        // Ignore rollback failures while surfacing the original startup error.
       }
     }
 
-    checkoutDetached(target, initialCheckpoint, true);
-  } catch (error) {
-    restoreProtectedFiles(target, initialParked);
-
-    if (stashName) {
-      try {
-        stashPop(target, stashName);
-      } catch {
-        // ignore restore failure while surfacing the original startup error
-      }
+    if (targetCheckpointSaved || workspaceCheckpointSaved) {
+      ensureCheckpointsDeleted(target, [workspaceCheckpointId, targetCheckpointId]);
     }
 
     throw error;
   }
 
-  restoreProtectedFiles(target, initialParked);
-
-  const initial = buildSyncResult(target, originalState.originalHead, initialCheckpoint, protect);
-
-  state = {
-    ...originalState,
-    lastCheckpointSha: initial.commitSha,
-    pid: process.pid,
-    protect,
-    startedAt: new Date().toISOString(),
-    stashName,
-    targetPath: target,
-    worktreeBranch,
-    worktreePath: worktree,
-  };
-
-  writeLockfile(state);
-
-  console.log("");
-  console.log(styleText("bold", "Spotlight ON"));
-  console.log(`  Branch:   ${styleText("cyan", worktreeBranch)}`);
-  console.log(`  From:     ${worktree}`);
-  console.log(`  Into:     ${target}`);
-  console.log(
-    `  Restore:  ${originalState.originalBranch ?? `${getShortSha(originalState.originalHead)} (detached)`}`,
-  );
-  console.log("");
-
-  log(`Initial checkpoint: ${initial.synced} changed files (${getShortSha(initial.commitSha)})`);
-  for (const warning of initial.warnings) {
-    console.log(styleText("yellow", `  Warning: ${warning}`));
-  }
-
-  const watcher = createWatcher({
+  watcher = createWatcher({
     debounceMs: debounce,
     dir: worktree,
     onSync: () => {
@@ -272,83 +399,35 @@ export const spotlight = (options: SpotlightOptions): void => {
       }
 
       try {
-        const previousRef = state.lastCheckpointSha ?? state.originalHead;
-        const commitSha = createCheckpoint(worktree, {
-          baselineRef: previousRef,
-          includeUntracked,
-          protect,
-        });
-
-        if (commitSha === previousRef) {
+        if (shouldSkipSync(worktree, target)) {
           return;
         }
 
-        const parked = parkProtectedFiles(target, protect);
+        const previousCommit = state.workspaceCheckpointCommit;
+        const result = applyWorkspaceCheckpoint(
+          worktree,
+          target,
+          workspaceCheckpointId,
+          previousCommit,
+        );
 
-        try {
-          checkoutDetached(target, commitSha, true);
-        } finally {
-          restoreProtectedFiles(target, parked);
+        if (!result.changedState) {
+          return;
         }
 
-        const result = buildSyncResult(target, previousRef, commitSha, protect);
-        state.lastCheckpointSha = result.commitSha;
+        state.lastSyncAt = new Date().toISOString();
+        state.workspaceCheckpointCommit = result.checkpointCommit;
         writeLockfile(state);
 
-        log(`Synced: ${result.synced} changed files (${getShortSha(result.commitSha)})`);
-
-        for (const warning of result.warnings) {
-          console.log(styleText("yellow", `  Warning: ${warning}`));
-        }
-      } catch (error) {
-        console.error(
-          styleText("red", `Sync error: ${error instanceof Error ? error.message : String(error)}`),
+        showActivity(
+          `Synced: ${result.synced} changed files (${formatCommit(getShortSha(result.checkpointCommit))})`,
         );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        showError(`Sync error: ${message}`);
       }
     },
   });
 
-  console.log(styleText("dim", "Watching for changes... (Ctrl+C to stop)"));
-  console.log("");
-
-  let cleaningUp = false;
-  const keepAlive = setInterval(noop, 2_147_483_647);
-
-  const cleanup = (): void => {
-    if (cleaningUp || !state) {
-      return;
-    }
-
-    cleaningUp = true;
-    console.log("");
-    log("Shutting down spotlight...");
-    watcher.close();
-    clearInterval(keepAlive);
-
-    try {
-      const restoredTarget = restoreFromState(state);
-      if (state.stashName) {
-        log(`Restored stash: ${state.stashName} (${gitPath(target, "refs/stash")})`);
-      }
-      log(`Restored ${target} to ${restoredTarget}`);
-    } catch (error) {
-      console.error(
-        styleText(
-          "red",
-          `Cleanup error: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      );
-    }
-
-    console.log(styleText("bold", "Spotlight OFF"));
-  };
-
-  process.on("SIGINT", () => {
-    cleanup();
-    process.exit(0);
-  });
-  process.on("SIGTERM", () => {
-    cleanup();
-    process.exit(0);
-  });
+  keepAlive = setInterval(noop, 2_147_483_647);
 };
