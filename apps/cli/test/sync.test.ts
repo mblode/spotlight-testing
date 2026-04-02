@@ -116,8 +116,8 @@ describe("sync and restore", { timeout: 15_000 }, () => {
         workspaceCheckpointId,
         targetRestoreLabel,
       );
-      writeLockfile(state);
-      expect(readLockfile()).not.toBeNull();
+      writeLockfile(state, fixture.root);
+      expect(readLockfile(fixture.root)).not.toBeNull();
 
       restore(fixture.root);
 
@@ -128,9 +128,9 @@ describe("sync and restore", { timeout: 15_000 }, () => {
       expect(readCachedDiffNames(fixture.root)).toEqual(["staged.txt"]);
       expect(readTextFileIfExists(fixture.root, "nested/new.txt")).toBeNull();
       expect(getCheckpointNamespaceRefs(fixture.root)).toEqual([]);
-      expect(readLockfile()).toBeNull();
+      expect(readLockfile(fixture.root)).toBeNull();
     } finally {
-      removeLockfile();
+      removeLockfile(fixture.root);
       cleanupTempDir(fixture.parent);
     }
   });

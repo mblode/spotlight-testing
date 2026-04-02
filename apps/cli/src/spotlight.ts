@@ -166,12 +166,12 @@ const restoreFromState = (state: SpotlightState): string => {
     state.workspaceCheckpointId,
     state.targetCheckpointId,
   ]);
-  removeLockfile();
+  removeLockfile(state.targetPath);
   return state.targetRestoreLabel;
 };
 
-const replaceRunningSpotlight = (): void => {
-  const existing = readLockfile();
+const replaceRunningSpotlight = (target: string): void => {
+  const existing = readLockfile(target);
 
   if (!existing) {
     return;
@@ -186,12 +186,12 @@ const replaceRunningSpotlight = (): void => {
   try {
     process.kill(existing.pid, "SIGTERM");
   } catch {
-    if (!isLocked()) {
+    if (!isLocked(target)) {
       return;
     }
   }
 
-  waitForLockfileRelease(existing.pid);
+  waitForLockfileRelease(existing.pid, target);
 };
 
 const shouldSkipSync = (worktree: string, target: string): boolean => {
@@ -254,13 +254,12 @@ export const syncOnce = (worktreePath: string, targetPath: string): SyncResult =
 };
 
 export const restore = (targetPath: string): void => {
-  const state = readLockfile();
+  const target = isGitRepo(targetPath) ? getGitRoot(targetPath) : resolve(targetPath);
+  const state = readLockfile(target);
 
   if (!state) {
     throw new Error("No spotlight state found. Nothing to restore.");
   }
-
-  const target = isGitRepo(targetPath) ? getGitRoot(targetPath) : resolve(targetPath);
 
   if (target !== state.targetPath) {
     throw new Error(`Lockfile target mismatch: expected ${state.targetPath}`);
@@ -278,8 +277,8 @@ export const spotlight = (options: SpotlightOptions): void => {
 
   ensureReadyForSpotlight(worktree, target);
 
-  if (isLocked()) {
-    replaceRunningSpotlight();
+  if (isLocked(target)) {
+    replaceRunningSpotlight(target);
   }
 
   const checkpointSuffix = `${Math.floor(Date.now() / 1000)}-${process.pid}`;
@@ -319,7 +318,7 @@ export const spotlight = (options: SpotlightOptions): void => {
       } else if (targetCheckpointSaved) {
         restoreCheckpoint(target, targetCheckpointId);
         ensureCheckpointsDeleted(target, [workspaceCheckpointId, targetCheckpointId]);
-        removeLockfile();
+        removeLockfile(target);
       }
     } catch (error) {
       showError(`Cleanup error: ${error instanceof Error ? error.message : String(error)}`);
@@ -369,7 +368,7 @@ export const spotlight = (options: SpotlightOptions): void => {
       worktreePath: worktree,
     };
 
-    writeLockfile(state);
+    writeLockfile(state, target);
     showSuccess("Spotlight started");
   } catch (error) {
     process.off("SIGINT", handleSigint);
@@ -417,7 +416,7 @@ export const spotlight = (options: SpotlightOptions): void => {
 
         state.lastSyncAt = new Date().toISOString();
         state.workspaceCheckpointCommit = result.checkpointCommit;
-        writeLockfile(state);
+        writeLockfile(state, target);
 
         showActivity(
           `Synced: ${result.synced} changed files (${formatCommit(getShortSha(result.checkpointCommit))})`,

@@ -4,9 +4,10 @@ import { resolve } from "node:path";
 import { Command } from "commander";
 
 import { getMainWorktreeRoot } from "./git.js";
-import { readLockfile, waitForLockfileRelease } from "./lockfile.js";
+import { listActiveLockfiles, readLockfile, waitForLockfileRelease } from "./lockfile.js";
 import { showError, showInfo, showSpotlightStatus, showSuccess } from "./output.js";
 import { restore, spotlight } from "./spotlight.js";
+import type { SpotlightState } from "./types.js";
 
 const program = new Command();
 
@@ -30,6 +31,28 @@ const rawArgs = process.argv.slice(2);
 const normalizedArgv = shouldDefaultToOn(rawArgs)
   ? [...process.argv.slice(0, 2), "on", ...rawArgs]
   : process.argv;
+
+const getScopedSpotlightState = (): SpotlightState | null => {
+  const scopedState = readLockfile(process.cwd());
+
+  if (scopedState) {
+    return scopedState;
+  }
+
+  const activeLockfiles = listActiveLockfiles();
+
+  if (activeLockfiles.length === 0) {
+    return null;
+  }
+
+  if (activeLockfiles.length === 1) {
+    return activeLockfiles[0] ?? null;
+  }
+
+  throw new Error(
+    "Multiple spotlight sessions are running. Run this command from the repo or worktree you want to inspect.",
+  );
+};
 
 program
   .name("spotlight-testing")
@@ -79,7 +102,7 @@ program
   .description("Stop a running spotlight and restore the target directory")
   .action(() => {
     try {
-      const state = readLockfile();
+      const state = getScopedSpotlightState();
 
       if (!state) {
         showInfo("No spotlight is running.");
@@ -96,7 +119,7 @@ program
         return;
       }
 
-      waitForLockfileRelease(state.pid);
+      waitForLockfileRelease(state.pid, state.targetPath);
       showSuccess("Spotlight stopped");
     } catch (error) {
       showError(`Cleanup error: ${error instanceof Error ? error.message : error}`);
@@ -109,7 +132,7 @@ program
   .description("Show the current spotlight status")
   .action(() => {
     try {
-      const state = readLockfile();
+      const state = getScopedSpotlightState();
 
       if (!state) {
         showInfo("No spotlight is running.");

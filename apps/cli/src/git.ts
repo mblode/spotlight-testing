@@ -86,7 +86,7 @@ export const getGitBranch = (cwd: string): string =>
 const getGitDir = (cwd: string): string =>
   canonicalizePath(runGit(["rev-parse", "--absolute-git-dir"], cwd));
 
-const getGitCommonDir = (cwd: string): string =>
+export const getGitCommonDir = (cwd: string): string =>
   canonicalizePath(runGit(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd));
 
 export const getGitRoot = (cwd: string): string =>

@@ -1,5 +1,11 @@
 # spotlight-testing
 
+## 0.0.4
+
+### Patch Changes
+
+- Use per-repo scoped lockfiles so multiple spotlight sessions can run concurrently on different repositories
+
 ## 0.0.3
 
 ### Patch Changes

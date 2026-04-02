@@ -3,9 +3,28 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { cleanupTempDir, createTempDir } from "./helpers/git-fixtures.js";
+import { cleanupTempDir, createRepoFixture, createTempDir } from "./helpers/git-fixtures.js";
 import { isLocked, readLockfile, removeLockfile, writeLockfile } from "../src/lockfile.js";
 import type { SpotlightState } from "../src/types.js";
+
+const buildState = (
+  targetPath: string,
+  worktreePath: string,
+  pid = process.pid,
+): SpotlightState => ({
+  lastSyncAt: new Date().toISOString(),
+  pid,
+  schemaVersion: 2,
+  startedAt: new Date().toISOString(),
+  targetCheckpointId: "cp-target-restore-1",
+  targetPath,
+  targetRestoreLabel: "main",
+  watchBackend: "fs.watch(serialized)",
+  workspaceCheckpointCommit: "0123456789abcdef0123456789abcdef01234567",
+  workspaceCheckpointId: "cp-spotlight-1",
+  worktreeBranch: "feature",
+  worktreePath,
+});
 
 describe("lockfile", () => {
   test("reads and writes from an injected lockfile path", () => {
@@ -97,6 +116,39 @@ describe("lockfile", () => {
         process.env.SPOTLIGHT_LOCKFILE = originalLockfileEnv;
       }
       cleanupTempDir(dir);
+    }
+  });
+
+  test("keeps separate default lockfiles for different repos", () => {
+    const originalLockfileEnv = process.env.SPOTLIGHT_LOCKFILE;
+    delete process.env.SPOTLIGHT_LOCKFILE;
+
+    const firstFixture = createRepoFixture();
+    const secondFixture = createRepoFixture();
+
+    try {
+      const firstState = buildState(firstFixture.root, firstFixture.worktree);
+      const secondState = buildState(secondFixture.root, secondFixture.worktree);
+
+      writeLockfile(firstState, firstFixture.root);
+      writeLockfile(secondState, secondFixture.root);
+
+      expect(readLockfile(firstFixture.root)).toEqual(firstState);
+      expect(readLockfile(secondFixture.root)).toEqual(secondState);
+
+      removeLockfile(firstFixture.root);
+      expect(readLockfile(firstFixture.root)).toBeNull();
+      expect(readLockfile(secondFixture.root)).toEqual(secondState);
+    } finally {
+      if (originalLockfileEnv === undefined) {
+        delete process.env.SPOTLIGHT_LOCKFILE;
+      } else {
+        process.env.SPOTLIGHT_LOCKFILE = originalLockfileEnv;
+      }
+      removeLockfile(firstFixture.root);
+      removeLockfile(secondFixture.root);
+      cleanupTempDir(firstFixture.parent);
+      cleanupTempDir(secondFixture.parent);
     }
   });
 });

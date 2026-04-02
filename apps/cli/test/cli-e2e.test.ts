@@ -350,4 +350,96 @@ describe.skipIf(process.platform !== "darwin")("cli e2e", { timeout: 90_000 }, (
       cleanupTempDir(fixture.parent);
     }
   });
+
+  test("different repos do not replace each other", async () => {
+    const firstFixture = createRepoFixture({
+      "app.txt": "frontyard-initial\n",
+    });
+    const secondFixture = createRepoFixture({
+      "app.txt": "chat-initial\n",
+    });
+    const processEnv = { ...process.env };
+    delete processEnv.SPOTLIGHT_LOCKFILE;
+
+    writeTextFile(firstFixture.worktree, "app.txt", "frontyard-first\n");
+    writeTextFile(secondFixture.worktree, "app.txt", "chat-first\n");
+
+    const firstProcess = spawn(
+      "node",
+      [cliPath, "on", firstFixture.worktree, "--target", firstFixture.root, "--debounce", "50"],
+      {
+        cwd: repoRoot,
+        env: processEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    const getFirstOutput = captureOutput(firstProcess);
+
+    let secondProcess: ReturnType<typeof spawn> | null = null;
+
+    try {
+      await waitFor(
+        () =>
+          firstProcess.exitCode === null &&
+          readTextFile(firstFixture.root, "app.txt") === "frontyard-first" &&
+          getFirstOutput().includes("Spotlight started"),
+      );
+
+      secondProcess = spawn(
+        "node",
+        [cliPath, "on", secondFixture.worktree, "--target", secondFixture.root, "--debounce", "50"],
+        {
+          cwd: repoRoot,
+          env: processEnv,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      const getSecondOutput = captureOutput(secondProcess);
+
+      await waitFor(
+        () =>
+          firstProcess.exitCode === null &&
+          secondProcess?.exitCode === null &&
+          readTextFile(secondFixture.root, "app.txt") === "chat-first" &&
+          getSecondOutput().includes("Spotlight started"),
+      );
+
+      writeTextFile(firstFixture.worktree, "app.txt", "frontyard-second\n");
+
+      await waitFor(() => readTextFile(firstFixture.root, "app.txt") === "frontyard-second");
+
+      execFileSync("node", [cliPath, "off"], {
+        cwd: firstFixture.root,
+        encoding: "utf8",
+        env: processEnv,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      await waitFor(() => firstProcess.exitCode !== null);
+      expect(readTextFile(firstFixture.root, "app.txt")).toBe("frontyard-initial");
+      expect(secondProcess?.exitCode).toBeNull();
+      expect(readTextFile(secondFixture.root, "app.txt")).toBe("chat-first");
+
+      execFileSync("node", [cliPath, "off"], {
+        cwd: secondFixture.root,
+        encoding: "utf8",
+        env: processEnv,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      await waitFor(() => secondProcess?.exitCode !== null);
+      expect(readTextFile(secondFixture.root, "app.txt")).toBe("chat-initial");
+    } finally {
+      if (firstProcess.exitCode === null) {
+        firstProcess.kill("SIGKILL");
+      }
+
+      if (secondProcess?.exitCode === null) {
+        secondProcess.kill("SIGKILL");
+      }
+
+      cleanupTempDir(firstFixture.parent);
+      cleanupTempDir(secondFixture.parent);
+    }
+  });
 });
