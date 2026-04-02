@@ -1,11 +1,5 @@
 # spotlight-testing
 
-## 0.0.3
-
-### Patch Changes
-
-- Refactor checkpoint and sync into unified checkpointer module, improve CLI output formatting, and expand test coverage
-
 ## 0.0.2
 
 ### Patch Changes
