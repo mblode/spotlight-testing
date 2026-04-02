@@ -3,50 +3,43 @@ export interface SpotlightOptions {
   worktree: string;
   /** Path to the main repo directory to sync into */
   target: string;
-  /** File patterns to never sync (glob-style) */
-  protect?: string[];
   /** Debounce interval in ms for file watcher */
   debounce?: number;
-  /** Whether to include untracked (non-ignored) files */
-  includeUntracked?: boolean;
 }
 
-export interface HeadState {
-  originalHead: string;
-  originalBranch: string | null;
-  isDetached: boolean;
-}
-
-export interface SpotlightState extends HeadState {
-  protect: string[];
-  lastCheckpointSha: string | null;
-  stashName: string | null;
-  worktreeBranch: string;
-  worktreePath: string;
-  targetPath: string;
+export interface SpotlightState {
+  schemaVersion: number;
   pid: number;
   startedAt: string;
+  lastSyncAt: string | null;
+  targetCheckpointId: string;
+  targetPath: string;
+  targetRestoreLabel: string;
+  watchBackend: string;
+  workspaceCheckpointCommit: string;
+  workspaceCheckpointId: string;
+  worktreeBranch: string;
+  worktreePath: string;
 }
 
 export interface SyncResult {
-  commitSha: string;
-  synced: number;
   changedPaths: string[];
-  warnings: string[];
+  changedState: boolean;
+  checkpointCommit: string;
+  checkpointId: string;
+  synced: number;
 }
 
-export interface CheckpointOptions {
-  baselineRef?: string;
-  includeUntracked?: boolean;
-  protect?: string[];
+export interface CheckpointSaveOptions {
+  force?: boolean;
+  id?: string;
 }
 
-export interface ParkedProtectedFile {
-  parkedPath: string;
-  relativePath: string;
-}
-
-export interface ParkedProtectedFiles {
-  files: ParkedProtectedFile[];
-  root: string;
+export interface CheckpointMetadata {
+  commit: string;
+  created: string;
+  head: string;
+  id: string;
+  indexTree: string;
+  worktreeTree: string;
 }

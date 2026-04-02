@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { createTempDir, cleanupTempDir } from "./helpers/git-fixtures.js";
+import { cleanupTempDir, createTempDir } from "./helpers/git-fixtures.js";
 import { isLocked, readLockfile, removeLockfile, writeLockfile } from "../src/lockfile.js";
 import type { SpotlightState } from "../src/types.js";
 
@@ -16,15 +16,16 @@ describe("lockfile", () => {
 
     try {
       const state: SpotlightState = {
-        isDetached: false,
-        lastCheckpointSha: null,
-        originalBranch: "main",
-        originalHead: "0123456789abcdef0123456789abcdef01234567",
+        lastSyncAt: new Date().toISOString(),
         pid: process.pid,
-        protect: [],
+        schemaVersion: 2,
         startedAt: new Date().toISOString(),
-        stashName: null,
+        targetCheckpointId: "cp-target-restore-1",
         targetPath: "/tmp/target",
+        targetRestoreLabel: "main",
+        watchBackend: "fs.watch(serialized)",
+        workspaceCheckpointCommit: "0123456789abcdef0123456789abcdef01234567",
+        workspaceCheckpointId: "cp-spotlight-1",
         worktreeBranch: "feature",
         worktreePath: "/tmp/worktree",
       };
@@ -32,10 +33,29 @@ describe("lockfile", () => {
       writeLockfile(state);
       expect(existsSync(lockfilePath)).toBe(true);
       expect(readLockfile()).toEqual(state);
-      expect(readFileSync(lockfilePath, "utf8")).toContain('"originalHead"');
+      expect(readFileSync(lockfilePath, "utf8")).toContain('"targetCheckpointId"');
 
       removeLockfile();
       expect(existsSync(lockfilePath)).toBe(false);
+    } finally {
+      if (originalLockfileEnv === undefined) {
+        delete process.env.SPOTLIGHT_LOCKFILE;
+      } else {
+        process.env.SPOTLIGHT_LOCKFILE = originalLockfileEnv;
+      }
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("rejects incompatible lockfiles", () => {
+    const dir = createTempDir();
+    const lockfilePath = join(dir, "spotlight.lock");
+    const originalLockfileEnv = process.env.SPOTLIGHT_LOCKFILE;
+    process.env.SPOTLIGHT_LOCKFILE = lockfilePath;
+
+    try {
+      writeFileSync(lockfilePath, JSON.stringify({ pid: process.pid }, null, 2), "utf8");
+      expect(() => readLockfile()).toThrow(/Incompatible spotlight lockfile/);
     } finally {
       if (originalLockfileEnv === undefined) {
         delete process.env.SPOTLIGHT_LOCKFILE;
@@ -53,7 +73,21 @@ describe("lockfile", () => {
     process.env.SPOTLIGHT_LOCKFILE = lockfilePath;
 
     try {
-      writeFileSync(lockfilePath, JSON.stringify({ pid: 999_999 }, null, 2), "utf8");
+      const staleState: SpotlightState = {
+        lastSyncAt: new Date().toISOString(),
+        pid: 999_999,
+        schemaVersion: 2,
+        startedAt: new Date().toISOString(),
+        targetCheckpointId: "cp-target-restore-1",
+        targetPath: "/tmp/target",
+        targetRestoreLabel: "main",
+        watchBackend: "fs.watch(serialized)",
+        workspaceCheckpointCommit: "0123456789abcdef0123456789abcdef01234567",
+        workspaceCheckpointId: "cp-spotlight-1",
+        worktreeBranch: "feature",
+        worktreePath: "/tmp/worktree",
+      };
+      writeFileSync(lockfilePath, JSON.stringify(staleState, null, 2), "utf8");
       expect(isLocked()).toBe(false);
       expect(existsSync(lockfilePath)).toBe(false);
     } finally {

@@ -1,4 +1,4 @@
-import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 
 import { describe, expect, test } from "vitest";
 
@@ -7,19 +7,15 @@ import {
   createRepoFixture,
   createRepoFixtureWithoutWorktree,
   execGit,
+  readGitCommonDir,
+  readGitPath,
 } from "./helpers/git-fixtures.js";
 import {
-  checkoutDetached,
   getGitBranch,
-  getGitCommonDir,
-  getHeadState,
+  getGitBusyState,
+  getHeadLabel,
   getMainWorktreeRoot,
-  gitPath,
-  isMergeInProgress,
-  isRebaseInProgress,
   isSameRepo,
-  stash,
-  stashPop,
 } from "../src/git.js";
 
 describe("git helpers", () => {
@@ -28,7 +24,7 @@ describe("git helpers", () => {
     const unrelatedRoot = createRepoFixtureWithoutWorktree();
 
     try {
-      expect(getGitCommonDir(fixture.root)).toBe(getGitCommonDir(fixture.worktree));
+      expect(readGitCommonDir(fixture.root)).toBe(readGitCommonDir(fixture.worktree));
       expect(isSameRepo(fixture.root, fixture.worktree)).toBe(true);
       expect(isSameRepo(fixture.root, unrelatedRoot.root)).toBe(false);
     } finally {
@@ -48,55 +44,45 @@ describe("git helpers", () => {
     }
   });
 
-  test("detects branch and detached head state", () => {
+  test("reports branch labels for attached and detached HEAD states", () => {
     const fixture = createRepoFixture();
 
     try {
-      const branchState = getHeadState(fixture.worktree);
-      expect(branchState.originalBranch).toBe("feature");
-      expect(branchState.isDetached).toBe(false);
-      expect(branchState.originalHead).toMatch(/^[0-9a-f]{40}$/);
       expect(getGitBranch(fixture.worktree)).toBe("feature");
+      expect(getHeadLabel(fixture.worktree)).toBe("feature");
 
-      checkoutDetached(fixture.worktree, branchState.originalHead, true);
+      execGit(fixture.worktree, ["checkout", "--detach", "HEAD"]);
 
-      const detachedState = getHeadState(fixture.worktree);
-      expect(detachedState.originalBranch).toBeNull();
-      expect(detachedState.isDetached).toBe(true);
       expect(getGitBranch(fixture.worktree)).toBe("HEAD");
+      expect(getHeadLabel(fixture.worktree)).toMatch(/\(detached\)$/);
     } finally {
       cleanupTempDir(fixture.parent);
     }
   });
 
-  test("detects merge and rebase state via git paths", () => {
+  test("detects busy repo states from git markers", () => {
     const fixture = createRepoFixture();
 
     try {
-      const rebaseDir = gitPath(fixture.root, "rebase-merge");
+      const rebaseDir = readGitPath(fixture.root, "rebase-merge");
+      const mergeHead = readGitPath(fixture.root, "MERGE_HEAD");
+      const cherryPickHead = readGitPath(fixture.root, "CHERRY_PICK_HEAD");
+      const revertHead = readGitPath(fixture.root, "REVERT_HEAD");
+
       mkdirSync(rebaseDir, { recursive: true });
-      expect(isRebaseInProgress(fixture.root)).toBe(true);
+      expect(getGitBusyState(fixture.root)).toBe("busy:rebase");
 
-      const mergeHead = gitPath(fixture.root, "MERGE_HEAD");
+      rmSync(rebaseDir, { force: true, recursive: true });
       writeFileSync(mergeHead, `${execGit(fixture.root, ["rev-parse", "HEAD"])}\n`, "utf8");
-      expect(isMergeInProgress(fixture.root)).toBe(true);
-    } finally {
-      cleanupTempDir(fixture.parent);
-    }
-  });
+      expect(getGitBusyState(fixture.root)).toBe("busy:merge");
 
-  test("stashes and restores untracked files", () => {
-    const fixture = createRepoFixture();
-    const scratchPath = `${fixture.root}/scratch.txt`;
+      rmSync(mergeHead, { force: true });
+      writeFileSync(cherryPickHead, `${execGit(fixture.root, ["rev-parse", "HEAD"])}\n`, "utf8");
+      expect(getGitBusyState(fixture.root)).toBe("busy:cherry-pick");
 
-    try {
-      writeFileSync(scratchPath, "local\n", "utf8");
-
-      const stashName = stash(fixture.root);
-      expect(stashName).toMatch(/^spotlight-auto-/);
-      expect(getGitBranch(fixture.root)).toBe("main");
-      expect(stashPop(fixture.root, stashName ?? "")).toBe(true);
-      expect(execGit(fixture.root, ["status", "--porcelain"])).toContain("scratch.txt");
+      rmSync(cherryPickHead, { force: true });
+      writeFileSync(revertHead, `${execGit(fixture.root, ["rev-parse", "HEAD"])}\n`, "utf8");
+      expect(getGitBusyState(fixture.root)).toBe("busy:revert");
     } finally {
       cleanupTempDir(fixture.parent);
     }

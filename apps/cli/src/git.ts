@@ -1,8 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 
-import type { HeadState } from "./types.js";
-
 interface GitCommandOptions {
   env?: NodeJS.ProcessEnv;
   input?: string | Buffer;
@@ -10,9 +8,12 @@ interface GitCommandOptions {
 }
 
 type ExecError = Error & {
+  status?: number | null;
   stderr?: Buffer | string;
   stdout?: Buffer | string;
 };
+
+type GitBusyState = "busy:cherry-pick" | "busy:merge" | "busy:rebase" | "busy:revert" | "clean";
 
 const parseNullSeparated = (value: string): string[] => value.split("\0").filter(Boolean);
 
@@ -32,7 +33,7 @@ const formatGitError = (args: string[], error: ExecError): Error => {
   return new Error(`git ${args.join(" ")} failed: ${details}`);
 };
 
-const runGit = (args: string[], cwd: string, options: GitCommandOptions = {}): string => {
+export const runGit = (args: string[], cwd: string, options: GitCommandOptions = {}): string => {
   try {
     const output = execFileSync("git", args, {
       cwd,
@@ -71,26 +72,6 @@ export const gitWithEnv = (
   options: Omit<GitCommandOptions, "env"> = {},
 ): string => runGit(args, cwd, { ...options, env });
 
-/** Get all git-tracked files in a directory */
-export const getTrackedFiles = (cwd: string, includeUntracked = false): string[] => {
-  const tracked = parseNullSeparated(runGit(["ls-files", "-z"], cwd, { trim: false }));
-
-  if (!includeUntracked) {
-    return tracked;
-  }
-
-  const untracked = parseNullSeparated(
-    runGit(["ls-files", "--others", "--exclude-standard", "-z"], cwd, { trim: false }),
-  );
-
-  return [...new Set([...tracked, ...untracked])];
-};
-
-export const getUntrackedFiles = (cwd: string): string[] =>
-  parseNullSeparated(
-    runGit(["ls-files", "--others", "--exclude-standard", "-z"], cwd, { trim: false }),
-  );
-
 export const getChangedFiles = (cwd: string, fromRef: string, toRef: string): string[] =>
   parseNullSeparated(runGit(["diff", "--name-only", "-z", fromRef, toRef], cwd, { trim: false }));
 
@@ -99,21 +80,22 @@ export const revParse = (cwd: string, ref: string): string => runGit(["rev-parse
 export const tryRevParse = (cwd: string, ref: string): string | null =>
   tryGit(["rev-parse", ref], cwd);
 
-/** Get the current branch name, or HEAD when detached */
 export const getGitBranch = (cwd: string): string =>
   tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd) ?? "HEAD";
 
-export const getGitDir = (cwd: string): string =>
+const getGitDir = (cwd: string): string =>
   canonicalizePath(runGit(["rev-parse", "--absolute-git-dir"], cwd));
 
-export const getGitCommonDir = (cwd: string): string =>
+const getGitCommonDir = (cwd: string): string =>
   canonicalizePath(runGit(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd));
 
-export const gitPath = (cwd: string, path: string): string =>
+export const getGitRoot = (cwd: string): string =>
+  canonicalizePath(runGit(["rev-parse", "--show-toplevel"], cwd));
+
+const gitPath = (cwd: string, path: string): string =>
   runGit(["rev-parse", "--path-format=absolute", "--git-path", path], cwd);
 
-/** Check if a directory is a git worktree (shares objects with another checkout) */
-export const isGitWorktree = (dir: string): boolean => {
+const isGitWorktree = (dir: string): boolean => {
   try {
     return getGitDir(dir) !== getGitCommonDir(dir);
   } catch {
@@ -121,7 +103,6 @@ export const isGitWorktree = (dir: string): boolean => {
   }
 };
 
-/** Check if a directory is a git repo or worktree */
 export const isGitRepo = (dir: string): boolean =>
   tryGit(["rev-parse", "--is-inside-work-tree"], dir) === "true";
 
@@ -156,99 +137,42 @@ export const isSameRepo = (dirA: string, dirB: string): boolean => {
   }
 };
 
-export const isRebaseInProgress = (cwd: string): boolean =>
-  existsSync(gitPath(cwd, "rebase-merge")) || existsSync(gitPath(cwd, "rebase-apply"));
+export const getShortSha = (sha: string): string => sha.slice(0, 12);
 
-export const isMergeInProgress = (cwd: string): boolean => existsSync(gitPath(cwd, "MERGE_HEAD"));
-
-/** Check if the working tree has any changes, including untracked files */
-export const hasChanges = (cwd: string): boolean =>
-  runGit(["status", "--porcelain"], cwd, { trim: false }).trim().length > 0;
-
-export const getHeadState = (cwd: string): HeadState => {
+export const getHeadLabel = (cwd: string): string => {
   const originalHead = revParse(cwd, "HEAD");
   const originalBranch = tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd);
 
-  return {
-    isDetached: originalBranch === null,
-    originalBranch,
-    originalHead,
-  };
+  return originalBranch ?? `${getShortSha(originalHead)} (detached)`;
 };
 
-/** Stash changes with a named message, returns the stash name or null */
-export const stash = (cwd: string, includeUntracked = true): string | null => {
-  const name = `spotlight-auto-${Date.now()}-${process.pid}`;
-  const args = ["stash", "push"];
-
-  if (includeUntracked) {
-    args.push("-u");
+export const getGitBusyState = (cwd: string): GitBusyState => {
+  if (existsSync(gitPath(cwd, "rebase-merge")) || existsSync(gitPath(cwd, "rebase-apply"))) {
+    return "busy:rebase";
   }
 
-  args.push("-m", name);
-
-  runGit(args, cwd, { trim: false });
-
-  const list = runGit(["stash", "list"], cwd, { trim: false });
-  return list.includes(name) ? name : null;
-};
-
-/** Pop a named stash */
-export const stashPop = (cwd: string, name: string): boolean => {
-  const list = runGit(["stash", "list"], cwd, { trim: false });
-  const lines = list.split("\n").filter(Boolean);
-
-  for (const line of lines) {
-    if (!line.includes(name)) {
-      continue;
-    }
-
-    const [ref] = line.split(":");
-    runGit(["stash", "pop", ref], cwd, { trim: false });
-    return true;
+  if (existsSync(gitPath(cwd, "MERGE_HEAD"))) {
+    return "busy:merge";
   }
 
-  return false;
-};
-
-export const checkoutDetached = (cwd: string, ref: string, force = false): void => {
-  const args = ["checkout"];
-
-  if (force) {
-    args.push("-f");
+  if (existsSync(gitPath(cwd, "CHERRY_PICK_HEAD"))) {
+    return "busy:cherry-pick";
   }
 
-  args.push("--detach", ref);
-  runGit(args, cwd, { trim: false });
-};
-
-export const checkoutBranch = (cwd: string, branch: string, force = false): void => {
-  const args = ["checkout"];
-
-  if (force) {
-    args.push("-f");
+  if (existsSync(gitPath(cwd, "REVERT_HEAD"))) {
+    return "busy:revert";
   }
 
-  args.push(branch);
-  runGit(args, cwd, { trim: false });
+  return "clean";
 };
 
-export const checkoutCommit = (cwd: string, commitSha: string, force = false): void => {
-  checkoutDetached(cwd, commitSha, force);
-};
-
-export const restoreHeadState = (cwd: string, state: HeadState): string => {
-  if (state.originalBranch) {
-    const branchRef = tryRevParse(cwd, `refs/heads/${state.originalBranch}`);
-
-    if (branchRef === state.originalHead) {
-      checkoutBranch(cwd, state.originalBranch, true);
-      return state.originalBranch;
-    }
+export const deleteGitRef = (cwd: string, ref: string): void => {
+  if (!tryRevParse(cwd, ref)) {
+    return;
   }
 
-  checkoutCommit(cwd, state.originalHead, true);
-  return `${state.originalHead.slice(0, 12)} (detached)`;
+  runGit(["update-ref", "-d", ref], cwd, { trim: false });
 };
 
-export const getShortSha = (sha: string): string => sha.slice(0, 12);
+export const readCommitObject = (cwd: string, ref: string): string =>
+  runGit(["cat-file", "commit", ref], cwd, { trim: false });

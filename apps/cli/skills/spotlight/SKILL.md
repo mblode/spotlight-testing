@@ -20,7 +20,11 @@ Checkpoint git worktree changes into a main repo directory for testing with a si
 
 ## Defaults
 
-- Spotlight tracks git-tracked files by default.
-- Pass `--include-untracked` to include untracked files in checkpoints.
-- Spotlight parks and restores target-local `.env*` files during checkpoint checkout.
+- Spotlight includes untracked files in checkpoints by default.
+- Ignored files are left in place; they are not checkpointed or rolled back.
+- Workspace state is stored in named Git checkpoint refs.
+- Spotlight saves the target root at startup and restores it on exit with destructive Git operations.
+- The default `on` and `off` commands stay terse; use `spotlight-testing status` for the full active-session details.
+- Spotlight does not rely on stash-based runtime preservation or protected-file parking.
+- The watcher coalesces bursts of changes and processes them serially, closer to `watchexec` than to a naive per-event handler.
 - The worktree and target must share the same Git common object database.

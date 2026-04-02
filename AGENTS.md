@@ -11,6 +11,7 @@ Turborepo monorepo for worktree-based checkpoint sync.
 - `npm run check-types` — Type check all packages via turbo
 - `npm exec -- ultracite fix` — Format + lint autofix
 - `npm exec -- ultracite check` — Lint check (CI)
+- `npm run knip` — Run the unused-code and unused-export scan
 - `npx changeset` — Create a changeset before release
 
 ## Scope

@@ -1,79 +1,70 @@
-import { rmSync } from "node:fs";
-import { join } from "node:path";
-
 import { describe, expect, test } from "vitest";
 
-import { createCheckpoint } from "../src/checkpoint.js";
+import {
+  getCheckpointCommit,
+  readCheckpointMetadata,
+  saveCheckpoint,
+} from "../src/checkpointer.js";
 import {
   cleanupTempDir,
   createRepoFixture,
-  execGit,
+  getCheckpointNamespaceRefs,
+  readGitTree,
   writeTextFile,
 } from "./helpers/git-fixtures.js";
 
-describe("checkpoint creation", () => {
-  test("captures tracked edits and deletions from HEAD", () => {
+describe("checkpoint refs", () => {
+  test("captures tracked and untracked files while honoring .gitignore", () => {
     const fixture = createRepoFixture({
+      ".gitignore": "ignored.log\n",
       "a.txt": "alpha\n",
-      "b.txt": "beta\n",
     });
 
     try {
       writeTextFile(fixture.worktree, "a.txt", "alpha-updated\n");
-      rmSync(join(fixture.worktree, "b.txt"));
-      writeTextFile(fixture.worktree, "c.txt", "untracked\n");
+      writeTextFile(fixture.worktree, "untracked.txt", "scratch\n");
+      writeTextFile(fixture.worktree, "ignored.log", "ignored\n");
 
-      const checkpoint = createCheckpoint(fixture.worktree);
-      const names = execGit(fixture.root, ["ls-tree", "-r", "--name-only", checkpoint])
-        .split("\n")
-        .filter(Boolean);
+      const checkpointId = "cp-test-save";
+      expect(saveCheckpoint(fixture.worktree, { id: checkpointId })).toBe(checkpointId);
 
-      expect(names).toEqual(["a.txt"]);
-      expect(execGit(fixture.root, ["show", `${checkpoint}:a.txt`])).toBe("alpha-updated");
+      const checkpointRef = `refs/conductor-checkpoints/${checkpointId}`;
+      expect(getCheckpointNamespaceRefs(fixture.root)).toContain(checkpointRef);
+      expect(readGitTree(fixture.root, checkpointRef)).toEqual([
+        ".gitignore",
+        "a.txt",
+        "untracked.txt",
+      ]);
+
+      const metadata = readCheckpointMetadata(fixture.root, checkpointRef);
+      expect(metadata.id).toBe(checkpointId);
+      expect(metadata.commit).toBe(getCheckpointCommit(fixture.root, checkpointId));
+      expect(metadata.head).toMatch(/^[0-9a-f]{40}$/);
+      expect(metadata.indexTree).toMatch(/^[0-9a-f]{40}$/);
+      expect(metadata.worktreeTree).toMatch(/^[0-9a-f]{40}$/);
+      expect(metadata.created).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     } finally {
       cleanupTempDir(fixture.parent);
     }
   });
 
-  test("includes untracked files when opted in and excludes protected files", () => {
+  test("force-updates an existing checkpoint ref", () => {
     const fixture = createRepoFixture({
       "a.txt": "alpha\n",
     });
 
     try {
+      const checkpointId = "cp-test-force";
+      saveCheckpoint(fixture.worktree, { id: checkpointId });
+      const firstCommit = getCheckpointCommit(fixture.worktree, checkpointId);
+
       writeTextFile(fixture.worktree, "a.txt", "alpha-updated\n");
-      writeTextFile(fixture.worktree, "c.txt", "untracked\n");
-      writeTextFile(fixture.worktree, ".env", "secret\n");
-      writeTextFile(fixture.worktree, "nested/.env.local", "nested-secret\n");
+      saveCheckpoint(fixture.worktree, { force: true, id: checkpointId });
+      const secondCommit = getCheckpointCommit(fixture.worktree, checkpointId);
 
-      const checkpoint = createCheckpoint(fixture.worktree, { includeUntracked: true });
-      const names = execGit(fixture.root, ["ls-tree", "-r", "--name-only", checkpoint])
-        .split("\n")
-        .filter(Boolean);
-
-      expect(names).toContain("a.txt");
-      expect(names).toContain("c.txt");
-      expect(names).not.toContain(".env");
-      expect(names).not.toContain("nested/.env.local");
-    } finally {
-      cleanupTempDir(fixture.parent);
-    }
-  });
-
-  test("reuses the baseline ref when the checkpoint tree is unchanged", () => {
-    const fixture = createRepoFixture({
-      "a.txt": "alpha\n",
-    });
-
-    try {
-      writeTextFile(fixture.worktree, "a.txt", "alpha-updated\n");
-
-      const initialCheckpoint = createCheckpoint(fixture.worktree);
-      const repeatedCheckpoint = createCheckpoint(fixture.worktree, {
-        baselineRef: initialCheckpoint,
-      });
-
-      expect(repeatedCheckpoint).toBe(initialCheckpoint);
+      expect(secondCommit).not.toBe(firstCommit);
+      expect(readCheckpointMetadata(fixture.root, secondCommit).id).toBe(checkpointId);
+      expect(readGitTree(fixture.root, secondCommit)).toEqual(["a.txt"]);
     } finally {
       cleanupTempDir(fixture.parent);
     }

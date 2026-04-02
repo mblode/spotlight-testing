@@ -12,17 +12,24 @@
     "format:check": "turbo format:check",
     "check-types": "turbo check-types",
     "test": "turbo test",
+    "knip": "knip",
     "changeset": "changeset",
     "changeset:version": "changeset version",
     "release": "turbo build && changeset publish"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.0",
+    "knip": "^6.2.0",
     "turbo": "^2.5.4",
     "ultracite": "^7.2.2"
   },
-  "packageManager": "npm@11.9.0",
   "engines": {
     "node": ">=22"
+  },
+  "packageManager": "npm@11.9.0",
+  "knip": {
+    "ignoreDependencies": [
+      "ultracite"
+    ]
   }
 }
