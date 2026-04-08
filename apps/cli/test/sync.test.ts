@@ -69,6 +69,28 @@ describe("sync and restore", { timeout: 15_000 }, () => {
     }
   });
 
+  test("syncOnce preserves the target HEAD when the worktree branch is ahead", () => {
+    const fixture = createRepoFixture({
+      "app.txt": "initial\n",
+    });
+
+    try {
+      const originalTargetHead = execGit(fixture.root, ["rev-parse", "HEAD"]);
+
+      writeTextFile(fixture.worktree, "app.txt", "committed-from-worktree\n");
+      execGit(fixture.worktree, ["add", "app.txt"]);
+      execGit(fixture.worktree, ["commit", "-m", "advance worktree"]);
+
+      syncOnce(fixture.worktree, fixture.root);
+
+      expect(getGitBranch(fixture.root)).toBe("main");
+      expect(execGit(fixture.root, ["rev-parse", "HEAD"])).toBe(originalTargetHead);
+      expect(readTextFile(fixture.root, "app.txt")).toBe("committed-from-worktree");
+    } finally {
+      cleanupTempDir(fixture.parent);
+    }
+  });
+
   test("syncOnce resolves nested worktree and target paths to the repo roots", () => {
     const fixture = createRepoFixture({
       "nested/view.txt": "before\n",

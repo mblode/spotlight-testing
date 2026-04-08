@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -39,6 +39,18 @@ const captureOutput = (child: ReturnType<typeof spawn>): (() => string) => {
   return (): string => stripAnsi(output);
 };
 
+const killProcessGroup = (child: ReturnType<typeof spawn>, signal: NodeJS.Signals): void => {
+  if (typeof child.pid !== "number") {
+    return;
+  }
+
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    // Ignore races where the child already exited.
+  }
+};
+
 const waitFor = async (predicate: () => boolean, timeoutMs = 30_000): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
 
@@ -52,6 +64,9 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 30_000): Promise<vo
 
   throw new Error("Timed out waiting for CLI state");
 };
+
+const getBatchFilePath = (index: number): string =>
+  `batch/file-${index.toString().padStart(4, "0")}.txt`;
 
 describe.skipIf(process.platform !== "darwin")("cli e2e", { timeout: 90_000 }, () => {
   beforeAll(() => {
@@ -119,6 +134,71 @@ describe.skipIf(process.platform !== "darwin")("cli e2e", { timeout: 90_000 }, (
     } finally {
       if (spotlightProcess.exitCode === null) {
         spotlightProcess.kill("SIGKILL");
+      }
+
+      cleanupTempDir(fixture.parent);
+    }
+  });
+
+  test("spotlight-testing survives repeated SIGINT during restore cleanup", async () => {
+    const fileCount = 8;
+    const fixture = createRepoFixture({
+      "app.txt": "initial\n",
+    });
+    const lockfilePath = join(fixture.parent, "spotlight.lock");
+
+    const processEnv = {
+      ...process.env,
+      SPOTLIGHT_LOCKFILE: lockfilePath,
+      SPOTLIGHT_TEST_IGNORE_SIGNAL_DELAY_MS: "250",
+    };
+    const spotlightProcess = spawn(
+      "node",
+      [cliPath, "on", fixture.worktree, "--target", fixture.root, "--debounce", "50"],
+      {
+        cwd: repoRoot,
+        detached: true,
+        env: processEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    const getSpotlightOutput = captureOutput(spotlightProcess);
+
+    try {
+      await waitFor(
+        () => existsSync(lockfilePath) && getSpotlightOutput().includes("Spotlight started"),
+      );
+
+      for (let index = 0; index < fileCount; index += 1) {
+        writeTextFile(fixture.worktree, getBatchFilePath(index), `updated-${index}\n`);
+      }
+
+      await waitFor(
+        () =>
+          readTextFileIfExists(fixture.root, getBatchFilePath(0)) === "updated-0" &&
+          readTextFileIfExists(fixture.root, getBatchFilePath(fileCount - 1)) ===
+            `updated-${fileCount - 1}`,
+        60_000,
+      );
+
+      killProcessGroup(spotlightProcess, "SIGINT");
+      await waitFor(() => getSpotlightOutput().includes("Stopping spotlight..."));
+      await delay(5);
+      killProcessGroup(spotlightProcess, "SIGINT");
+
+      await waitFor(() => spotlightProcess.exitCode !== null, 60_000);
+      expect(spotlightProcess.exitCode).toBe(0);
+      await waitFor(() => !existsSync(lockfilePath), 30_000);
+
+      const output = getSpotlightOutput();
+      expect(output).toContain("Stopping spotlight...");
+      expect(output).not.toContain("Cleanup error:");
+      expect(readTextFileIfExists(fixture.root, getBatchFilePath(0))).toBeNull();
+      expect(readTextFileIfExists(fixture.root, getBatchFilePath(fileCount - 1))).toBeNull();
+      expect(readTextFile(fixture.root, "app.txt")).toBe("initial");
+    } finally {
+      if (spotlightProcess.exitCode === null) {
+        killProcessGroup(spotlightProcess, "SIGKILL");
       }
 
       cleanupTempDir(fixture.parent);
@@ -228,6 +308,103 @@ describe.skipIf(process.platform !== "darwin")("cli e2e", { timeout: 90_000 }, (
       expect(readTextFile(fixture.root, "staged.txt")).toBe("after-stage");
       expect(readCachedDiffNames(fixture.root)).toEqual(["staged.txt"]);
       expect(readTextFileIfExists(fixture.root, "new.txt")).toBeNull();
+    } finally {
+      if (spotlightProcess.exitCode === null) {
+        spotlightProcess.kill("SIGKILL");
+      }
+
+      cleanupTempDir(fixture.parent);
+    }
+  });
+
+  test("spotlight-testing keeps unrelated target runtime files during active resyncs", async () => {
+    const fixture = createRepoFixture({
+      "app.txt": "initial\n",
+    });
+    const lockfilePath = join(fixture.parent, "spotlight.lock");
+
+    writeTextFile(fixture.worktree, "app.txt", "from-worktree-one\n");
+
+    const processEnv = { ...process.env, SPOTLIGHT_LOCKFILE: lockfilePath };
+    const spotlightProcess = spawn(
+      "node",
+      [cliPath, "on", fixture.worktree, "--target", fixture.root, "--debounce", "50"],
+      {
+        cwd: repoRoot,
+        env: processEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    try {
+      await waitFor(
+        () =>
+          existsSync(lockfilePath) && readTextFile(fixture.root, "app.txt") === "from-worktree-one",
+      );
+
+      writeTextFile(fixture.root, "runtime-artifact.txt", "keep-me\n");
+      writeTextFile(fixture.worktree, "app.txt", "from-worktree-two\n");
+
+      await waitFor(() => readTextFile(fixture.root, "app.txt") === "from-worktree-two");
+
+      expect(readTextFile(fixture.root, "runtime-artifact.txt")).toBe("keep-me");
+
+      execFileSync("node", [cliPath, "off"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: processEnv,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      await waitFor(() => !existsSync(lockfilePath));
+      expect(readTextFileIfExists(fixture.root, "runtime-artifact.txt")).toBeNull();
+    } finally {
+      if (spotlightProcess.exitCode === null) {
+        spotlightProcess.kill("SIGKILL");
+      }
+
+      cleanupTempDir(fixture.parent);
+    }
+  });
+
+  test("spotlight-testing removes worktree-owned files when they are deleted mid-session", async () => {
+    const fixture = createRepoFixture({
+      "app.txt": "initial\n",
+    });
+    const lockfilePath = join(fixture.parent, "spotlight.lock");
+
+    writeTextFile(fixture.worktree, "app.txt", "from-worktree\n");
+
+    const processEnv = { ...process.env, SPOTLIGHT_LOCKFILE: lockfilePath };
+    const spotlightProcess = spawn(
+      "node",
+      [cliPath, "on", fixture.worktree, "--target", fixture.root, "--debounce", "50"],
+      {
+        cwd: repoRoot,
+        env: processEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    try {
+      await waitFor(
+        () => existsSync(lockfilePath) && readTextFile(fixture.root, "app.txt") === "from-worktree",
+      );
+
+      writeTextFile(fixture.worktree, "notes.txt", "ephemeral\n");
+      await waitFor(() => readTextFileIfExists(fixture.root, "notes.txt") === "ephemeral");
+
+      rmSync(join(fixture.worktree, "notes.txt"), { force: true });
+      await waitFor(() => readTextFileIfExists(fixture.root, "notes.txt") === null);
+
+      execFileSync("node", [cliPath, "off"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: processEnv,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      await waitFor(() => !existsSync(lockfilePath));
     } finally {
       if (spotlightProcess.exitCode === null) {
         spotlightProcess.kill("SIGKILL");

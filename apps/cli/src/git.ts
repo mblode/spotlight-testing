@@ -3,11 +3,16 @@ import { existsSync, realpathSync } from "node:fs";
 
 interface GitCommandOptions {
   env?: NodeJS.ProcessEnv;
+  ignoreSignals?: boolean;
   input?: string | Buffer;
   trim?: boolean;
 }
 
+type GitReadOptions = Omit<GitCommandOptions, "env" | "input">;
+
 type ExecError = Error & {
+  message: string;
+  signal?: NodeJS.Signals | null;
   status?: number | null;
   stderr?: Buffer | string;
   stdout?: Buffer | string;
@@ -16,6 +21,9 @@ type ExecError = Error & {
 type GitBusyState = "busy:cherry-pick" | "busy:merge" | "busy:rebase" | "busy:revert" | "clean";
 
 const parseNullSeparated = (value: string): string[] => value.split("\0").filter(Boolean);
+
+const encodeNullSeparated = (paths: string[]): Buffer =>
+  Buffer.from(paths.map((filePath) => `${filePath}\0`).join(""), "utf8");
 
 const parseWorktreeList = (value: string): string[] =>
   value
@@ -33,19 +41,62 @@ const formatGitError = (args: string[], error: ExecError): Error => {
   return new Error(`git ${args.join(" ")} failed: ${details}`);
 };
 
-export const runGit = (args: string[], cwd: string, options: GitCommandOptions = {}): string => {
-  try {
-    const output = execFileSync("git", args, {
-      cwd,
-      encoding: "utf8",
-      env: { ...process.env, ...options.env },
-      input: options.input,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+const isInterruptedExecError = (error: ExecError): boolean =>
+  error.signal === "SIGINT" || error.signal === "SIGTERM";
 
-    return options.trim === false ? output : output.trim();
-  } catch (error) {
-    throw formatGitError(args, error as ExecError);
+const getIgnoreSignalDelaySeconds = (): string | null => {
+  const delayMs = Number.parseInt(process.env.SPOTLIGHT_TEST_IGNORE_SIGNAL_DELAY_MS ?? "", 10);
+
+  if (!Number.isFinite(delayMs) || delayMs <= 0) {
+    return null;
+  }
+
+  return (delayMs / 1000).toFixed(3);
+};
+
+const getGitCommand = (args: string[], ignoreSignals: boolean): [string, string[]] => {
+  if (!ignoreSignals) {
+    return ["git", args];
+  }
+
+  const ignoreSignalDelaySeconds = getIgnoreSignalDelaySeconds();
+
+  return [
+    "sh",
+    [
+      "-c",
+      'trap "" INT TERM; if [ "$1" != "0" ]; then sleep "$1"; fi; shift; exec "$@"',
+      "sh",
+      ignoreSignalDelaySeconds ?? "0",
+      "git",
+      ...args,
+    ],
+  ];
+};
+
+export const runGit = (args: string[], cwd: string, options: GitCommandOptions = {}): string => {
+  const [command, commandArgs] = getGitCommand(args, options.ignoreSignals ?? false);
+
+  while (true) {
+    try {
+      const output = execFileSync(command, commandArgs, {
+        cwd,
+        encoding: "utf8",
+        env: { ...process.env, ...options.env },
+        input: options.input,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      return options.trim === false ? output : output.trim();
+    } catch (error) {
+      const execError = error as ExecError;
+
+      if (options.ignoreSignals && isInterruptedExecError(execError)) {
+        continue;
+      }
+
+      throw formatGitError(args, execError);
+    }
   }
 };
 
@@ -73,12 +124,43 @@ export const gitWithEnv = (
 ): string => runGit(args, cwd, { ...options, env });
 
 export const getChangedFiles = (cwd: string, fromRef: string, toRef: string): string[] =>
-  parseNullSeparated(runGit(["diff", "--name-only", "-z", fromRef, toRef], cwd, { trim: false }));
+  parseNullSeparated(
+    runGit(["diff", "--name-only", "--no-renames", "-z", fromRef, toRef], cwd, { trim: false }),
+  );
 
-export const revParse = (cwd: string, ref: string): string => runGit(["rev-parse", ref], cwd);
+export const restoreWorktreePaths = (cwd: string, sourceRef: string, paths: string[]): void => {
+  if (paths.length === 0) {
+    return;
+  }
 
-export const tryRevParse = (cwd: string, ref: string): string | null =>
-  tryGit(["rev-parse", ref], cwd);
+  runGit(
+    [
+      "restore",
+      "--source",
+      sourceRef,
+      "--worktree",
+      "--pathspec-from-file=-",
+      "--pathspec-file-nul",
+    ],
+    cwd,
+    {
+      input: encodeNullSeparated(paths),
+      trim: false,
+    },
+  );
+};
+
+export const hasPathInRef = (cwd: string, ref: string, filePath: string): boolean =>
+  tryGit(["cat-file", "-e", `${ref}:${filePath}`], cwd) !== null;
+
+export const revParse = (cwd: string, ref: string, options: GitReadOptions = {}): string =>
+  runGit(["rev-parse", ref], cwd, options);
+
+export const tryRevParse = (
+  cwd: string,
+  ref: string,
+  options: GitReadOptions = {},
+): string | null => tryGit(["rev-parse", ref], cwd, options);
 
 export const getGitBranch = (cwd: string): string =>
   tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd) ?? "HEAD";
@@ -174,5 +256,5 @@ export const deleteGitRef = (cwd: string, ref: string): void => {
   runGit(["update-ref", "-d", ref], cwd, { trim: false });
 };
 
-export const readCommitObject = (cwd: string, ref: string): string =>
-  runGit(["cat-file", "commit", ref], cwd, { trim: false });
+export const readCommitObject = (cwd: string, ref: string, options: GitReadOptions = {}): string =>
+  runGit(["cat-file", "commit", ref], cwd, { ...options, trim: false });

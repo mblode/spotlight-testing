@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getMainWorktreeRoot: vi.fn(),
   listActiveLockfiles: vi.fn(),
+  readActiveLockfile: vi.fn(),
   readLockfile: vi.fn(),
   restore: vi.fn(),
   showError: vi.fn(),
@@ -25,6 +26,7 @@ const mockCliDependencies = (): void => {
 
   vi.doMock("../src/lockfile.js", () => ({
     listActiveLockfiles: mocks.listActiveLockfiles,
+    readActiveLockfile: mocks.readActiveLockfile,
     readLockfile: mocks.readLockfile,
     waitForLockfileRelease: mocks.waitForLockfileRelease,
   }));
@@ -61,6 +63,7 @@ afterEach(() => {
   vi.doUnmock("../src/output.js");
   mocks.getMainWorktreeRoot.mockReset();
   mocks.listActiveLockfiles.mockReset();
+  mocks.readActiveLockfile.mockReset();
   mocks.readLockfile.mockReset();
   mocks.restore.mockReset();
   mocks.showError.mockReset();
@@ -74,6 +77,7 @@ afterEach(() => {
 describe("cli smoke", () => {
   test("passes the worktree, target, and debounce through to spotlight", async () => {
     mocks.listActiveLockfiles.mockReturnValue([]);
+    mocks.readActiveLockfile.mockReturnValue(null);
     mocks.readLockfile.mockReturnValue(null);
     mockCliDependencies();
     const restoreArgv = setArgv([
@@ -106,6 +110,7 @@ describe("cli smoke", () => {
 
   test("defaults to the current worktree and infers the main checkout without a subcommand", async () => {
     mocks.listActiveLockfiles.mockReturnValue([]);
+    mocks.readActiveLockfile.mockReturnValue(null);
     mocks.readLockfile.mockReturnValue(null);
     mocks.getMainWorktreeRoot.mockReturnValue("/tmp/target");
     mockCliDependencies();
@@ -133,6 +138,7 @@ describe("cli smoke", () => {
 
   test("restores directly when off sees a stale process", async () => {
     mocks.listActiveLockfiles.mockReturnValue([]);
+    mocks.readActiveLockfile.mockReturnValue(null);
     mocks.readLockfile.mockReturnValue({
       pid: 999_999,
       targetPath: "/tmp/target",
@@ -174,7 +180,8 @@ describe("cli smoke", () => {
     };
 
     mocks.listActiveLockfiles.mockReturnValue([]);
-    mocks.readLockfile.mockReturnValue(state);
+    mocks.readActiveLockfile.mockReturnValue(state);
+    mocks.readLockfile.mockReturnValue(null);
     mockCliDependencies();
     const restoreArgv = setArgv(["node", "spotlight-testing", "status"]);
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
@@ -197,6 +204,7 @@ describe("cli smoke", () => {
     };
 
     mocks.listActiveLockfiles.mockReturnValue([state]);
+    mocks.readActiveLockfile.mockReturnValue(null);
     mocks.readLockfile.mockReturnValue(null);
     mockCliDependencies();
     const restoreArgv = setArgv(["node", "spotlight-testing", "off"]);
@@ -213,6 +221,59 @@ describe("cli smoke", () => {
       expect(exitSpy).not.toHaveBeenCalled();
     } finally {
       cwdSpy.mockRestore();
+      restoreArgv();
+    }
+  });
+
+  test("status ignores stale scoped lockfiles", async () => {
+    mocks.listActiveLockfiles.mockReturnValue([]);
+    mocks.readActiveLockfile.mockReturnValue(null);
+    mocks.readLockfile.mockReturnValue({
+      pid: 999_999,
+      targetPath: "/tmp/target",
+    });
+    mockCliDependencies();
+    const restoreArgv = setArgv(["node", "spotlight-testing", "status"]);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("process.exit should not be called");
+    }) as never);
+
+    try {
+      await import("../src/cli.js");
+      expect(mocks.showInfo).toHaveBeenCalledWith("No spotlight is running.");
+      expect(mocks.showSpotlightStatus).not.toHaveBeenCalled();
+      expect(exitSpy).not.toHaveBeenCalled();
+    } finally {
+      restoreArgv();
+    }
+  });
+
+  test("off restores after a signalled process exits and leaves stale state behind", async () => {
+    const staleState = {
+      pid: 123,
+      targetPath: "/tmp/target",
+    };
+
+    mocks.listActiveLockfiles.mockReturnValue([]);
+    mocks.readActiveLockfile.mockReturnValue(staleState);
+    mocks.readLockfile.mockImplementation((repoPath?: string) =>
+      repoPath === "/tmp/target" ? staleState : null,
+    );
+    mockCliDependencies();
+    const restoreArgv = setArgv(["node", "spotlight-testing", "off"]);
+    const killSpy = vi.spyOn(process, "kill").mockImplementation((() => {}) as never);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("process.exit should not be called");
+    }) as never);
+
+    try {
+      await import("../src/cli.js");
+      expect(killSpy).toHaveBeenCalledWith(123, "SIGTERM");
+      expect(mocks.waitForLockfileRelease).toHaveBeenCalledWith(123, "/tmp/target");
+      expect(mocks.restore).toHaveBeenCalledWith("/tmp/target");
+      expect(mocks.showSuccess).toHaveBeenCalledWith("Spotlight stopped");
+      expect(exitSpy).not.toHaveBeenCalled();
+    } finally {
       restoreArgv();
     }
   });

@@ -15,6 +15,10 @@ import {
 } from "./git.js";
 
 const ZERO_OID = "0000000000000000000000000000000000000000";
+const RESTORE_GIT_OPTIONS = {
+  ignoreSignals: true,
+  trim: false,
+} as const;
 const CHECKPOINT_AUTHOR_ENV = {
   GIT_AUTHOR_DATE: "",
   GIT_AUTHOR_EMAIL: "checkpointer@noreply",
@@ -123,14 +127,18 @@ export const saveCheckpoint = (cwd: string, options: CheckpointSaveOptions = {})
   return id;
 };
 
-export const readCheckpointMetadata = (cwd: string, ref: string): CheckpointMetadata => {
-  const commitObject = readCommitObject(cwd, ref);
+export const readCheckpointMetadata = (
+  cwd: string,
+  ref: string,
+  options: { ignoreSignals?: boolean } = {},
+): CheckpointMetadata => {
+  const commitObject = readCommitObject(cwd, ref, options);
   const message = commitObject.split("\n\n").slice(1).join("\n\n");
   const [firstLine] = message.split("\n");
   const id = firstLine.startsWith("checkpoint:") ? firstLine.slice("checkpoint:".length) : "";
 
   return {
-    commit: revParse(cwd, ref),
+    commit: revParse(cwd, ref, options),
     created: getCommitMetaLine(message, "created"),
     head: getCommitMetaLine(message, "head"),
     id,
@@ -142,20 +150,20 @@ export const readCheckpointMetadata = (cwd: string, ref: string): CheckpointMeta
 export const restoreCheckpoint = (cwd: string, id: string): string => {
   const ref = getCheckpointerRef(id);
 
-  if (!tryRevParse(cwd, ref)) {
+  if (!tryRevParse(cwd, ref, RESTORE_GIT_OPTIONS)) {
     throw new Error(`checkpoint not found: ${id}`);
   }
 
-  const metadata = readCheckpointMetadata(cwd, ref);
+  const metadata = readCheckpointMetadata(cwd, ref, RESTORE_GIT_OPTIONS);
 
   if (metadata.head === ZERO_OID) {
     throw new Error("cannot restore: checkpoint saved with unborn HEAD (no commits)");
   }
 
-  runGit(["reset", "--hard", metadata.head], cwd, { trim: false });
-  runGit(["read-tree", "--reset", "-u", metadata.worktreeTree], cwd, { trim: false });
-  runGit(["clean", "-fd"], cwd, { trim: false });
-  runGit(["read-tree", "--reset", metadata.indexTree], cwd, { trim: false });
+  runGit(["reset", "--hard", metadata.head], cwd, RESTORE_GIT_OPTIONS);
+  runGit(["read-tree", "--reset", "-u", metadata.worktreeTree], cwd, RESTORE_GIT_OPTIONS);
+  runGit(["clean", "-fd"], cwd, RESTORE_GIT_OPTIONS);
+  runGit(["read-tree", "--reset", metadata.indexTree], cwd, RESTORE_GIT_OPTIONS);
 
   return `restored checkpoint: ${id}`;
 };

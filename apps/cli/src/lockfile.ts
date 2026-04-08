@@ -113,12 +113,7 @@ const readActiveLockfileAtPath = (lockfilePath: string): SpotlightState | null =
     return null;
   }
 
-  if (isProcessRunning(state.pid)) {
-    return state;
-  }
-
-  removeLockfileAtPath(lockfilePath);
-  return null;
+  return isProcessRunning(state.pid) ? state : null;
 };
 
 const listScopedLockfiles = (): string[] => {
@@ -139,6 +134,16 @@ export const readLockfile = (repoPath?: string): SpotlightState | null => {
   }
 
   return readLockfileAtPath(lockfilePath);
+};
+
+export const readActiveLockfile = (repoPath?: string): SpotlightState | null => {
+  const lockfilePath = getCurrentLockfilePath(repoPath);
+
+  if (!lockfilePath) {
+    return null;
+  }
+
+  return readActiveLockfileAtPath(lockfilePath);
 };
 
 export const listActiveLockfiles = (): SpotlightState[] => {

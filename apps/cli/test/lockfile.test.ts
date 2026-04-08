@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { cleanupTempDir, createRepoFixture, createTempDir } from "./helpers/git-fixtures.js";
-import { isLocked, readLockfile, removeLockfile, writeLockfile } from "../src/lockfile.js";
+import {
+  isLocked,
+  readActiveLockfile,
+  readLockfile,
+  removeLockfile,
+  writeLockfile,
+} from "../src/lockfile.js";
 import type { SpotlightState } from "../src/types.js";
 
 const buildState = (
@@ -85,7 +91,7 @@ describe("lockfile", () => {
     }
   });
 
-  test("removes stale lockfiles when the process is gone", () => {
+  test("ignores stale lockfiles without deleting recovery state", () => {
     const dir = createTempDir();
     const lockfilePath = join(dir, "spotlight.lock");
     const originalLockfileEnv = process.env.SPOTLIGHT_LOCKFILE;
@@ -108,7 +114,9 @@ describe("lockfile", () => {
       };
       writeFileSync(lockfilePath, JSON.stringify(staleState, null, 2), "utf8");
       expect(isLocked()).toBe(false);
-      expect(existsSync(lockfilePath)).toBe(false);
+      expect(readActiveLockfile()).toBeNull();
+      expect(readLockfile()).toEqual(staleState);
+      expect(existsSync(lockfilePath)).toBe(true);
     } finally {
       if (originalLockfileEnv === undefined) {
         delete process.env.SPOTLIGHT_LOCKFILE;

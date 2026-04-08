@@ -1,6 +1,6 @@
 {
   "name": "spotlight-testing",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Checkpoint git worktree changes into a main repo directory for testing with a single Docker environment",
   "keywords": [
     "docker",

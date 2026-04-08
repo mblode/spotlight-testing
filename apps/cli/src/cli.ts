@@ -4,8 +4,14 @@ import { resolve } from "node:path";
 import { Command } from "commander";
 
 import { getMainWorktreeRoot } from "./git.js";
-import { listActiveLockfiles, readLockfile, waitForLockfileRelease } from "./lockfile.js";
+import {
+  listActiveLockfiles,
+  readActiveLockfile,
+  readLockfile,
+  waitForLockfileRelease,
+} from "./lockfile.js";
 import { showError, showInfo, showSpotlightStatus, showSuccess } from "./output.js";
+import { getPackageVersion } from "./package-version.js";
 import { restore, spotlight } from "./spotlight.js";
 import type { SpotlightState } from "./types.js";
 
@@ -32,13 +38,7 @@ const normalizedArgv = shouldDefaultToOn(rawArgs)
   ? [...process.argv.slice(0, 2), "on", ...rawArgs]
   : process.argv;
 
-const getScopedSpotlightState = (): SpotlightState | null => {
-  const scopedState = readLockfile(process.cwd());
-
-  if (scopedState) {
-    return scopedState;
-  }
-
+const getOnlyActiveSpotlightState = (): SpotlightState | null => {
   const activeLockfiles = listActiveLockfiles();
 
   if (activeLockfiles.length === 0) {
@@ -54,12 +54,42 @@ const getScopedSpotlightState = (): SpotlightState | null => {
   );
 };
 
+const getScopedActiveSpotlightState = (): SpotlightState | null => {
+  const scopedState = readActiveLockfile(process.cwd());
+
+  if (scopedState) {
+    return scopedState;
+  }
+
+  if (readLockfile(process.cwd())) {
+    return null;
+  }
+
+  return getOnlyActiveSpotlightState();
+};
+
+const getScopedRestorableSpotlightState = (): SpotlightState | null => {
+  const activeScopedState = readActiveLockfile(process.cwd());
+
+  if (activeScopedState) {
+    return activeScopedState;
+  }
+
+  const scopedState = readLockfile(process.cwd());
+
+  if (scopedState) {
+    return scopedState;
+  }
+
+  return getOnlyActiveSpotlightState();
+};
+
 program
   .name("spotlight-testing")
   .description(
     "Run worktree changes in a repo root by saving Conductor-style checkpoints and restoring them in place.",
   )
-  .version("0.0.2");
+  .version(getPackageVersion());
 
 program
   .command("on")
@@ -102,7 +132,7 @@ program
   .description("Stop a running spotlight and restore the target directory")
   .action(() => {
     try {
-      const state = getScopedSpotlightState();
+      const state = getScopedRestorableSpotlightState();
 
       if (!state) {
         showInfo("No spotlight is running.");
@@ -120,6 +150,11 @@ program
       }
 
       waitForLockfileRelease(state.pid, state.targetPath);
+
+      if (readLockfile(state.targetPath)?.pid === state.pid) {
+        restore(state.targetPath);
+      }
+
       showSuccess("Spotlight stopped");
     } catch (error) {
       showError(`Cleanup error: ${error instanceof Error ? error.message : error}`);
@@ -132,7 +167,7 @@ program
   .description("Show the current spotlight status")
   .action(() => {
     try {
-      const state = getScopedSpotlightState();
+      const state = getScopedActiveSpotlightState();
 
       if (!state) {
         showInfo("No spotlight is running.");

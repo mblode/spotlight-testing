@@ -8,7 +8,7 @@
 </p>
 
 - **Checkpoint refs:** Captures workspace state into named Git checkpoint refs and applies them to the target directory.
-- **Destructive restore:** Saves the target root at startup and restores it on exit with a hard reset-style checkpoint restore.
+- **Path-scoped incremental sync:** Replays only changed paths into the target after startup, then uses a full checkpoint restore on exit.
 - **Untracked by default:** Workspace untracked files are included in checkpoints, while ignored files stay in the target.
 - **Watchexec-style watching:** Serializes file events and coalesces bursts of changes into a single follow-up sync.
 - **Programmatic API:** Use `spotlight()`, `syncOnce()`, and `restore()` directly from Node.js.
@@ -53,9 +53,9 @@ spotlight-testing status
 
 `spotlight-testing on` checkpoints the target root before spotlight starts. That checkpoint is restored when spotlight stops, so tracked files, non-ignored untracked files, and the index return to their startup state.
 
-Workspace changes are synced into the target through named Git checkpoint refs. By default, untracked files are included in the workspace checkpoint so the target sees the same working tree content as the worktree.
+Workspace changes are synced into the target through named Git checkpoint refs. After startup Spotlight replays only the changed paths into the target worktree, which keeps unrelated runtime files stable while still mirroring ongoing worktree edits.
 
-Checkpoint restore is destructive. The target is rewritten from the saved checkpoint using Git operations equivalent to `reset --hard`, `read-tree -u`, and `clean -fd`, followed by restoration of the saved index tree. Ignored files are left in place rather than checkpointed or rolled back.
+Checkpoint restore is destructive only when spotlight stops. At shutdown the target is rewritten from the saved checkpoint using Git operations equivalent to `reset --hard`, `read-tree -u`, and `clean -fd`, followed by restoration of the saved index tree. Ignored files are left in place rather than checkpointed or rolled back.
 
 `syncOnce()` follows the same checkpoint model in a one-shot destructive pass.
 
@@ -97,10 +97,10 @@ restore("/path/to/main-repo");
 1. Verifies the worktree and target share the same Git object database.
 2. Saves a checkpoint of the target root before spotlight starts.
 3. Creates a named checkpoint ref from the worktree.
-4. Restores the workspace checkpoint into the target with Conductor-style destructive Git operations.
+4. Replays only the changed workspace paths into the target worktree during incremental sync.
 5. Watches the worktree with a serialized change queue that behaves like `watchexec`.
 6. Coalesces bursts of changes into the next checkpoint/restore cycle.
-7. On exit, restores the saved target-root checkpoint.
+7. On exit, restores the saved target-root checkpoint with a full destructive restore.
 
 ## Requirements
 

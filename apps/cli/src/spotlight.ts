@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import {
   deleteCheckpoint,
@@ -12,10 +13,12 @@ import {
   getGitBranch,
   getGitBusyState,
   getGitRoot,
+  hasPathInRef,
   getHeadLabel,
   getShortSha,
   isGitRepo,
   isSameRepo,
+  restoreWorktreePaths,
 } from "./git.js";
 import {
   isLocked,
@@ -43,6 +46,8 @@ interface CheckpointDiff {
   changedPaths: string[];
   changedState: boolean;
 }
+
+type ApplyMode = "full" | "live";
 
 const formatBusyState = (busyState: ReturnType<typeof getGitBusyState>): string => {
   switch (busyState) {
@@ -137,18 +142,39 @@ const checkpointStateChanged = (
   };
 };
 
+const removeWorktreePaths = (target: string, paths: string[]): void => {
+  for (const filePath of paths) {
+    rmSync(join(target, filePath), { force: true, recursive: true });
+  }
+};
+
 const applyWorkspaceCheckpoint = (
   worktree: string,
   target: string,
   workspaceCheckpointId: string,
   previousRef: string,
+  mode: ApplyMode,
 ): SyncResult => {
   saveCheckpoint(worktree, { force: true, id: workspaceCheckpointId });
   const checkpointCommit = getCheckpointCommit(worktree, workspaceCheckpointId);
   const diff = checkpointStateChanged(target, previousRef, checkpointCommit);
 
-  if (diff.changedState) {
+  if (mode === "full" && diff.changedState) {
     restoreCheckpoint(target, workspaceCheckpointId);
+  } else if (mode === "live" && diff.changedPaths.length > 0) {
+    const deletedPaths: string[] = [];
+    const restoredPaths: string[] = [];
+
+    for (const filePath of diff.changedPaths) {
+      if (hasPathInRef(target, checkpointCommit, filePath)) {
+        restoredPaths.push(filePath);
+      } else {
+        deletedPaths.push(filePath);
+      }
+    }
+
+    removeWorktreePaths(target, deletedPaths);
+    restoreWorktreePaths(target, checkpointCommit, restoredPaths);
   }
 
   return {
@@ -170,7 +196,31 @@ const restoreFromState = (state: SpotlightState): string => {
   return state.targetRestoreLabel;
 };
 
-const replaceRunningSpotlight = (target: string): void => {
+export const restore = (targetPath: string): void => {
+  const target = isGitRepo(targetPath) ? getGitRoot(targetPath) : resolve(targetPath);
+  const state = readLockfile(target);
+
+  if (!state) {
+    throw new Error("No spotlight state found. Nothing to restore.");
+  }
+
+  if (target !== state.targetPath) {
+    throw new Error(`Lockfile target mismatch: expected ${state.targetPath}`);
+  }
+
+  restoreFromState(state);
+};
+
+const recoverLingeringSpotlight = (state: SpotlightState): void => {
+  if (readLockfile(state.targetPath)?.pid !== state.pid) {
+    return;
+  }
+
+  showActivity(`Recovering spotlight from ${state.worktreePath} (PID ${state.pid})...`);
+  restore(state.targetPath);
+};
+
+const reconcileExistingSpotlight = (target: string): void => {
   const existing = readLockfile(target);
 
   if (!existing) {
@@ -181,17 +231,25 @@ const replaceRunningSpotlight = (target: string): void => {
     throw new Error("Spotlight is already active in this process.");
   }
 
+  if (!isLocked(target)) {
+    showActivity(
+      `Recovering stale spotlight from ${existing.worktreePath} (PID ${existing.pid})...`,
+    );
+    restore(existing.targetPath);
+    return;
+  }
+
   showActivity(`Replacing spotlight from ${existing.worktreePath} (PID ${existing.pid})...`);
 
   try {
     process.kill(existing.pid, "SIGTERM");
   } catch {
-    if (!isLocked(target)) {
-      return;
-    }
+    recoverLingeringSpotlight(existing);
+    return;
   }
 
   waitForLockfileRelease(existing.pid, target);
+  recoverLingeringSpotlight(existing);
 };
 
 const shouldSkipSync = (worktree: string, target: string): boolean => {
@@ -232,6 +290,7 @@ export const syncOnce = (worktreePath: string, targetPath: string): SyncResult =
       target,
       workspaceCheckpointId,
       targetCheckpointCommit,
+      "live",
     );
     workspaceCheckpointSaved = true;
     completed = true;
@@ -253,21 +312,6 @@ export const syncOnce = (worktreePath: string, targetPath: string): SyncResult =
   }
 };
 
-export const restore = (targetPath: string): void => {
-  const target = isGitRepo(targetPath) ? getGitRoot(targetPath) : resolve(targetPath);
-  const state = readLockfile(target);
-
-  if (!state) {
-    throw new Error("No spotlight state found. Nothing to restore.");
-  }
-
-  if (target !== state.targetPath) {
-    throw new Error(`Lockfile target mismatch: expected ${state.targetPath}`);
-  }
-
-  restoreFromState(state);
-};
-
 export const spotlight = (options: SpotlightOptions): void => {
   const { target, worktree } = getNormalizedPaths(
     resolve(options.worktree),
@@ -277,15 +321,14 @@ export const spotlight = (options: SpotlightOptions): void => {
 
   ensureReadyForSpotlight(worktree, target);
 
-  if (isLocked(target)) {
-    replaceRunningSpotlight(target);
-  }
+  reconcileExistingSpotlight(target);
 
   const checkpointSuffix = `${Math.floor(Date.now() / 1000)}-${process.pid}`;
   const targetCheckpointId = `cp-target-restore-${checkpointSuffix}`;
   const workspaceCheckpointId = `cp-spotlight-${checkpointSuffix}`;
   const worktreeBranch = getWorktreeLabel(worktree);
   const targetRestoreLabel = getHeadLabel(target);
+  let cleanupResult: "failed" | "succeeded" | null = null;
   let state: SpotlightState | null = null;
   let targetCheckpointSaved = false;
   let workspaceCheckpointSaved = false;
@@ -294,9 +337,13 @@ export const spotlight = (options: SpotlightOptions): void => {
   let watcher: WatcherHandle | null = null;
   showInfo("Starting spotlight...");
 
-  const cleanup = (): void => {
+  const cleanup = (): "failed" | "succeeded" => {
+    if (cleanupResult) {
+      return cleanupResult;
+    }
+
     if (cleaningUp) {
-      return;
+      return "failed";
     }
 
     cleaningUp = true;
@@ -322,20 +369,31 @@ export const spotlight = (options: SpotlightOptions): void => {
       }
     } catch (error) {
       showError(`Cleanup error: ${error instanceof Error ? error.message : String(error)}`);
-      return;
+      cleanupResult = "failed";
+      return cleanupResult;
     }
 
     showSuccess("Spotlight stopped");
+    cleanupResult = "succeeded";
+    return cleanupResult;
+  };
+
+  const exitAfterCleanup = (): void => {
+    // If cleanup is already in progress but not yet done, a second signal
+    // arrived during restore. Let the original invocation handle the exit.
+    if (cleaningUp && !cleanupResult) {
+      return;
+    }
+
+    process.exit(cleanup() === "succeeded" ? 0 : 1);
   };
 
   const handleSigint = (): void => {
-    cleanup();
-    process.exit(0);
+    exitAfterCleanup();
   };
 
   const handleSigterm = (): void => {
-    cleanup();
-    process.exit(0);
+    exitAfterCleanup();
   };
 
   process.on("SIGINT", handleSigint);
@@ -350,6 +408,7 @@ export const spotlight = (options: SpotlightOptions): void => {
       target,
       workspaceCheckpointId,
       getCheckpointCommit(target, targetCheckpointId),
+      "full",
     );
     workspaceCheckpointSaved = true;
 
@@ -408,6 +467,7 @@ export const spotlight = (options: SpotlightOptions): void => {
           target,
           workspaceCheckpointId,
           previousCommit,
+          "live",
         );
 
         if (!result.changedState) {

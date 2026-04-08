@@ -1,5 +1,11 @@
 # spotlight-testing
 
+## 0.0.5
+
+### Patch Changes
+
+- Switch to incremental path-scoped syncs during active sessions so unrelated target runtime files are preserved between resyncs; full destructive restore only runs on exit. Fix a second-SIGINT race that caused the process to exit with code 1 during restore cleanup.
+
 ## 0.0.4
 
 ### Patch Changes
