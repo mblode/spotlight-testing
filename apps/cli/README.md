@@ -29,7 +29,13 @@ Run from inside a git worktree. The target directory is inferred automatically:
 spotlight-testing
 ```
 
-Explicitly set the worktree and target:
+Pass a linked worktree path from anywhere. The main checkout is still inferred automatically:
+
+```bash
+spotlight-testing on ./feature-branch
+```
+
+Explicitly set both worktree and target:
 
 ```bash
 spotlight-testing on ./feature-branch --target ./main-repo

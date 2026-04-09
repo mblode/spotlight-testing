@@ -38,6 +38,14 @@ const normalizedArgv = shouldDefaultToOn(rawArgs)
   ? [...process.argv.slice(0, 2), "on", ...rawArgs]
   : process.argv;
 
+const getTargetPath = (worktreePath: string, explicitTarget?: string): string | null => {
+  if (explicitTarget) {
+    return resolve(explicitTarget);
+  }
+
+  return getMainWorktreeRoot(worktreePath);
+};
+
 const getOnlyActiveSpotlightState = (): SpotlightState | null => {
   const activeLockfiles = listActiveLockfiles();
 
@@ -100,19 +108,11 @@ program
   .action((worktree: string | undefined, opts: { debounce: string; target?: string }) => {
     try {
       const worktreePath = resolve(worktree ?? process.cwd());
-      let targetPath: string | null;
-
-      if (opts.target) {
-        targetPath = resolve(opts.target);
-      } else if (worktree) {
-        targetPath = process.cwd();
-      } else {
-        targetPath = getMainWorktreeRoot(worktreePath);
-      }
+      const targetPath = getTargetPath(worktreePath, opts.target);
 
       if (!targetPath) {
         throw new Error(
-          "Could not infer the main checkout from the current directory. Run from a linked worktree or pass `--target <path>`.",
+          "Could not infer the main checkout from the worktree. Run from a linked worktree, pass a linked worktree path, or pass `--target <path>`.",
         );
       }
 

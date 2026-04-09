@@ -453,6 +453,45 @@ describe.skipIf(process.platform !== "darwin")("cli e2e", { timeout: 90_000 }, (
     }
   });
 
+  test("spotlight-testing infers the main checkout from an explicit worktree path", async () => {
+    const fixture = createRepoFixture({
+      "app.txt": "initial\n",
+    });
+    const lockfilePath = join(fixture.parent, "spotlight.lock");
+    writeTextFile(fixture.worktree, "app.txt", "updated\n");
+
+    const processEnv = { ...process.env, SPOTLIGHT_LOCKFILE: lockfilePath };
+    const spotlightProcess = spawn("node", [cliPath, "on", fixture.worktree, "--debounce", "50"], {
+      cwd: repoRoot,
+      env: processEnv,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    try {
+      await waitFor(
+        () => existsSync(lockfilePath) && readTextFile(fixture.root, "app.txt") === "updated",
+      );
+
+      execFileSync("node", [cliPath, "off"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: processEnv,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      await waitFor(() => !existsSync(lockfilePath));
+
+      expect(execGit(fixture.root, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("main");
+      expect(readTextFile(fixture.root, "app.txt")).toBe("initial");
+    } finally {
+      if (spotlightProcess.exitCode === null) {
+        spotlightProcess.kill("SIGKILL");
+      }
+
+      cleanupTempDir(fixture.parent);
+    }
+  });
+
   test("starting spotlight again replaces the active process", async () => {
     const fixture = createRepoFixture({
       "app.txt": "initial\n",

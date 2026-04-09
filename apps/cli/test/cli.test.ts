@@ -108,6 +108,34 @@ describe("cli smoke", () => {
     }
   });
 
+  test("infers the main checkout from an explicit worktree path when target is omitted", async () => {
+    mocks.listActiveLockfiles.mockReturnValue([]);
+    mocks.readActiveLockfile.mockReturnValue(null);
+    mocks.readLockfile.mockReturnValue(null);
+    mocks.getMainWorktreeRoot.mockReturnValue("/tmp/target");
+    mockCliDependencies();
+    const restoreArgv = setArgv(["node", "spotlight-testing", "on", "/tmp/worktree"]);
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/unrelated-repo");
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("process.exit should not be called");
+    }) as never);
+
+    try {
+      await import("../src/cli.js");
+
+      expect(mocks.getMainWorktreeRoot).toHaveBeenCalledWith("/tmp/worktree");
+      expect(mocks.spotlight).toHaveBeenCalledWith({
+        debounce: 300,
+        target: "/tmp/target",
+        worktree: "/tmp/worktree",
+      });
+      expect(exitSpy).not.toHaveBeenCalled();
+    } finally {
+      cwdSpy.mockRestore();
+      restoreArgv();
+    }
+  });
+
   test("defaults to the current worktree and infers the main checkout without a subcommand", async () => {
     mocks.listActiveLockfiles.mockReturnValue([]);
     mocks.readActiveLockfile.mockReturnValue(null);

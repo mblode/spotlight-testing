@@ -1,5 +1,11 @@
 # spotlight-testing
 
+## 0.0.6
+
+### Patch Changes
+
+- Add incremental live sync, per-repo scoped lockfiles for concurrent sessions, and signal handling fixes.
+
 ## 0.0.5
 
 ### Patch Changes
