@@ -1,11 +1,11 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { getCheckpointCommit, restoreCheckpoint, saveCheckpoint } from "../src/checkpointer.js";
 import { getGitBranch, getGitRoot, getHeadLabel, isSameRepo } from "../src/git.js";
 import { readLockfile, removeLockfile, writeLockfile } from "../src/lockfile.js";
-import { restore, syncOnce } from "../src/spotlight.js";
+import { restore, stopSpotlightSession, syncOnce } from "../src/spotlight.js";
 import type { SpotlightState } from "../src/types.js";
 import {
   cleanupTempDir,
@@ -150,6 +150,54 @@ describe("sync and restore", { timeout: 15_000 }, () => {
       expect(readCachedDiffNames(fixture.root)).toEqual(["staged.txt"]);
       expect(readTextFileIfExists(fixture.root, "nested/new.txt")).toBeNull();
       expect(getCheckpointNamespaceRefs(fixture.root)).toEqual([]);
+      expect(readLockfile(fixture.root)).toBeNull();
+    } finally {
+      removeLockfile(fixture.root);
+      cleanupTempDir(fixture.parent);
+    }
+  });
+
+  test("stopSpotlightSession restores stale state without signalling the stale pid", () => {
+    const fixture = createRepoFixture({
+      "app.txt": "initial\n",
+    });
+
+    try {
+      const targetCheckpointId = "cp-target-restore-stale";
+      const workspaceCheckpointId = "cp-workspace-stale";
+      const targetRestoreLabel = getHeadLabel(fixture.root);
+
+      saveCheckpoint(fixture.root, { id: targetCheckpointId });
+      writeTextFile(fixture.worktree, "app.txt", "updated-from-worktree\n");
+      saveCheckpoint(fixture.worktree, { force: true, id: workspaceCheckpointId });
+      restoreCheckpoint(fixture.root, workspaceCheckpointId);
+
+      const state = buildState(
+        fixture,
+        targetCheckpointId,
+        workspaceCheckpointId,
+        targetRestoreLabel,
+      );
+      writeLockfile(state, fixture.root);
+
+      const killSpy = vi.spyOn(process, "kill").mockImplementation(((
+        _pid: number,
+        signal?: number | NodeJS.Signals,
+      ) => {
+        if (signal === 0) {
+          throw new Error("missing process");
+        }
+
+        throw new Error(`unexpected signal: ${String(signal)}`);
+      }) as never);
+
+      try {
+        stopSpotlightSession(state);
+      } finally {
+        killSpy.mockRestore();
+      }
+
+      expect(readTextFile(fixture.root, "app.txt")).toBe("initial");
       expect(readLockfile(fixture.root)).toBeNull();
     } finally {
       removeLockfile(fixture.root);

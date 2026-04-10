@@ -140,6 +140,61 @@ describe.skipIf(process.platform !== "darwin")("cli e2e", { timeout: 90_000 }, (
     }
   });
 
+  test("spotlight-testing stop resets to the requested ref and cleans target files", async () => {
+    const fixture = createRepoFixture({
+      "app.txt": "initial\n",
+    });
+    const lockfilePath = join(fixture.parent, "spotlight.lock");
+
+    writeTextFile(fixture.root, "local-only.txt", "remove-me\n");
+    writeTextFile(fixture.worktree, "app.txt", "updated\n");
+
+    const processEnv = { ...process.env, SPOTLIGHT_LOCKFILE: lockfilePath };
+    const spotlightProcess = spawn(
+      "node",
+      [cliPath, "on", fixture.worktree, "--target", fixture.root, "--debounce", "50"],
+      {
+        cwd: repoRoot,
+        env: processEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    try {
+      await waitFor(
+        () => existsSync(lockfilePath) && readTextFile(fixture.root, "app.txt") === "updated",
+      );
+
+      const stopResult = spawnSync("node", [cliPath, "stop", "--no-fetch", "--branch", "main"], {
+        cwd: fixture.worktree,
+        encoding: "utf8",
+        env: processEnv,
+      });
+
+      if (stopResult.error) {
+        throw stopResult.error;
+      }
+
+      expect(stopResult.status).toBe(0);
+      const stopOutput = readOutput(stopResult);
+      expect(stopOutput).toContain("Stopping spotlight...");
+      expect(stopOutput).toContain("Resetting to main...");
+      expect(stopOutput).toContain("Reset to main");
+
+      await waitFor(() => !existsSync(lockfilePath));
+
+      expect(execGit(fixture.root, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("main");
+      expect(readTextFile(fixture.root, "app.txt")).toBe("initial");
+      expect(readTextFileIfExists(fixture.root, "local-only.txt")).toBeNull();
+    } finally {
+      if (spotlightProcess.exitCode === null) {
+        spotlightProcess.kill("SIGKILL");
+      }
+
+      cleanupTempDir(fixture.parent);
+    }
+  });
+
   test("spotlight-testing survives repeated SIGINT during restore cleanup", async () => {
     const fileCount = 8;
     const fixture = createRepoFixture({

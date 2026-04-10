@@ -10,25 +10,31 @@ import {
   saveCheckpoint,
 } from "./checkpointer.js";
 import {
+  deleteGitRef,
   getGitBranch,
   getGitBusyState,
   getGitRoot,
-  hasPathInRef,
   getHeadLabel,
+  gitClean,
+  gitFetch,
+  gitResetHard,
   getShortSha,
+  hasPathInRef,
   isGitRepo,
   isSameRepo,
+  listCheckpointRefs,
   restoreWorktreePaths,
 } from "./git.js";
 import {
   isLocked,
+  readActiveLockfile,
   readLockfile,
   removeLockfile,
   waitForLockfileRelease,
   writeLockfile,
 } from "./lockfile.js";
 import { formatCommit, showActivity, showError, showInfo, showSuccess } from "./output.js";
-import type { SpotlightOptions, SpotlightState, SyncResult } from "./types.js";
+import type { SpotlightOptions, SpotlightState, StopOptions, SyncResult } from "./types.js";
 import { createWatcher } from "./watcher.js";
 import type { WatcherHandle } from "./watcher.js";
 
@@ -125,6 +131,16 @@ const ensureCheckpointsDeleted = (cwd: string, checkpointIds: string[]): void =>
   }
 };
 
+const deleteAllCheckpointRefs = (cwd: string): void => {
+  for (const ref of listCheckpointRefs(cwd)) {
+    try {
+      deleteGitRef(cwd, ref);
+    } catch {
+      // Ignore orphaned ref cleanup failures during aggressive stop/reset.
+    }
+  }
+};
+
 const checkpointStateChanged = (
   cwd: string,
   previousRef: string,
@@ -211,13 +227,59 @@ export const restore = (targetPath: string): void => {
   restoreFromState(state);
 };
 
-const recoverLingeringSpotlight = (state: SpotlightState): void => {
-  if (readLockfile(state.targetPath)?.pid !== state.pid) {
+export const stopSpotlightSession = (state: SpotlightState): void => {
+  const activeState = readActiveLockfile(state.targetPath);
+
+  if (!activeState || activeState.pid !== state.pid) {
+    if (readLockfile(state.targetPath)?.pid === state.pid) {
+      restore(state.targetPath);
+    }
+
     return;
   }
 
-  showActivity(`Recovering spotlight from ${state.worktreePath} (PID ${state.pid})...`);
-  restore(state.targetPath);
+  try {
+    process.kill(activeState.pid, "SIGTERM");
+  } catch {
+    if (readLockfile(state.targetPath)?.pid === state.pid) {
+      restore(state.targetPath);
+    }
+
+    return;
+  }
+
+  waitForLockfileRelease(activeState.pid, state.targetPath);
+
+  if (readLockfile(state.targetPath)?.pid === state.pid) {
+    restore(state.targetPath);
+  }
+};
+
+export const stopAndReset = (options: StopOptions = {}): void => {
+  const remote = options.remote ?? "origin";
+  const branch = options.branch ?? `${remote}/main`;
+  const shouldFetch = options.fetch !== false;
+  const target = getRepoRoot(resolve(options.target ?? process.cwd()), "Target");
+  const state = readLockfile(target);
+
+  if (state) {
+    showInfo("Stopping spotlight...");
+    stopSpotlightSession(state);
+    showSuccess("Spotlight stopped");
+  }
+
+  removeLockfile(target);
+  deleteAllCheckpointRefs(target);
+
+  if (shouldFetch) {
+    showInfo(`Fetching from ${remote}...`);
+    gitFetch(target, remote);
+  }
+
+  showInfo(`Resetting to ${branch}...`);
+  gitResetHard(target, branch);
+  gitClean(target);
+  showSuccess(`Reset to ${branch}`);
 };
 
 const reconcileExistingSpotlight = (target: string): void => {
@@ -235,21 +297,12 @@ const reconcileExistingSpotlight = (target: string): void => {
     showActivity(
       `Recovering stale spotlight from ${existing.worktreePath} (PID ${existing.pid})...`,
     );
-    restore(existing.targetPath);
+    stopSpotlightSession(existing);
     return;
   }
 
   showActivity(`Replacing spotlight from ${existing.worktreePath} (PID ${existing.pid})...`);
-
-  try {
-    process.kill(existing.pid, "SIGTERM");
-  } catch {
-    recoverLingeringSpotlight(existing);
-    return;
-  }
-
-  waitForLockfileRelease(existing.pid, target);
-  recoverLingeringSpotlight(existing);
+  stopSpotlightSession(existing);
 };
 
 const shouldSkipSync = (worktree: string, target: string): boolean => {

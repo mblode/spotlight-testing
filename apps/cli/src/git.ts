@@ -256,5 +256,22 @@ export const deleteGitRef = (cwd: string, ref: string): void => {
   runGit(["update-ref", "-d", ref], cwd, { trim: false });
 };
 
+export const gitFetch = (cwd: string, remote = "origin"): void => {
+  runGit(["fetch", remote], cwd, { trim: false });
+};
+
+export const gitResetHard = (cwd: string, ref: string): void => {
+  runGit(["reset", "--hard", ref], cwd, { trim: false });
+};
+
+export const gitClean = (cwd: string): void => {
+  runGit(["clean", "-fd"], cwd, { trim: false });
+};
+
+export const listCheckpointRefs = (cwd: string): string[] => {
+  const output = tryGit(["for-each-ref", "--format=%(refname)", "refs/conductor-checkpoints"], cwd);
+  return output ? output.split("\n").filter(Boolean) : [];
+};
+
 export const readCommitObject = (cwd: string, ref: string, options: GitReadOptions = {}): string =>
   runGit(["cat-file", "commit", ref], cwd, { ...options, trim: false });

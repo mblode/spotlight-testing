@@ -3,16 +3,11 @@ import { resolve } from "node:path";
 
 import { Command } from "commander";
 
-import { getMainWorktreeRoot } from "./git.js";
-import {
-  listActiveLockfiles,
-  readActiveLockfile,
-  readLockfile,
-  waitForLockfileRelease,
-} from "./lockfile.js";
+import { getGitRoot, getMainWorktreeRoot, isGitRepo } from "./git.js";
+import { listActiveLockfiles, readActiveLockfile, readLockfile } from "./lockfile.js";
 import { showError, showInfo, showSpotlightStatus, showSuccess } from "./output.js";
 import { getPackageVersion } from "./package-version.js";
-import { restore, spotlight } from "./spotlight.js";
+import { spotlight, stopAndReset, stopSpotlightSession } from "./spotlight.js";
 import type { SpotlightState } from "./types.js";
 
 const program = new Command();
@@ -92,6 +87,40 @@ const getScopedRestorableSpotlightState = (): SpotlightState | null => {
   return getOnlyActiveSpotlightState();
 };
 
+const getLocalRestorableSpotlightState = (): SpotlightState | null => {
+  const activeScopedState = readActiveLockfile(process.cwd());
+
+  if (activeScopedState) {
+    return activeScopedState;
+  }
+
+  return readLockfile(process.cwd());
+};
+
+const getStopTargetPath = (explicitTarget?: string): string | null => {
+  if (explicitTarget) {
+    return resolve(explicitTarget);
+  }
+
+  const scopedState = getLocalRestorableSpotlightState();
+
+  if (scopedState) {
+    return scopedState.targetPath;
+  }
+
+  const mainWorktreeRoot = getMainWorktreeRoot(process.cwd());
+
+  if (mainWorktreeRoot) {
+    return mainWorktreeRoot;
+  }
+
+  if (isGitRepo(process.cwd())) {
+    return getGitRoot(process.cwd());
+  }
+
+  return getOnlyActiveSpotlightState()?.targetPath ?? null;
+};
+
 program
   .name("spotlight-testing")
   .description(
@@ -140,22 +169,39 @@ program
       }
 
       showInfo("Stopping spotlight...");
+      stopSpotlightSession(state);
+      showSuccess("Spotlight stopped");
+    } catch (error) {
+      showError(`Cleanup error: ${error instanceof Error ? error.message : error}`);
+      process.exit(1);
+    }
+  });
 
-      try {
-        process.kill(state.pid, "SIGTERM");
-      } catch {
-        restore(state.targetPath);
-        showSuccess("Spotlight stopped");
+program
+  .command("stop")
+  .description("Stop spotlight if needed, then reset the target directory to a Git ref")
+  .option("-t, --target <path>", "Target directory to reset")
+  .option("-r, --remote <name>", "Remote to fetch from", "origin")
+  .option("-b, --branch <ref>", "Ref to reset to after fetch (default: <remote>/main)")
+  .option("--no-fetch", "Skip git fetch before reset")
+  .action((opts: { target?: string; remote: string; branch?: string; fetch: boolean }) => {
+    try {
+      const targetPath = getStopTargetPath(opts.target);
+
+      if (!targetPath) {
+        showError(
+          "Could not determine a target. Run from inside the repo, use a linked worktree, or pass --target <path>.",
+        );
+        process.exit(1);
         return;
       }
 
-      waitForLockfileRelease(state.pid, state.targetPath);
-
-      if (readLockfile(state.targetPath)?.pid === state.pid) {
-        restore(state.targetPath);
-      }
-
-      showSuccess("Spotlight stopped");
+      stopAndReset({
+        branch: opts.branch ?? `${opts.remote}/main`,
+        fetch: opts.fetch,
+        remote: opts.remote,
+        target: targetPath,
+      });
     } catch (error) {
       showError(`Cleanup error: ${error instanceof Error ? error.message : error}`);
       process.exit(1);

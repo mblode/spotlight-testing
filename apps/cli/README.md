@@ -47,17 +47,25 @@ Stop syncing and restore the target:
 spotlight-testing off
 ```
 
+Stop spotlight if needed, then reset and clean the target repo:
+
+```bash
+spotlight-testing stop --branch main
+```
+
 Check the current sync status:
 
 ```bash
 spotlight-testing status
 ```
 
-`on` and `off` keep default output minimal. Use `status` when you need the full active-session details.
+`on`, `off`, and `stop` keep default output minimal. Use `status` when you need the full active-session details.
 
 ## Target State
 
 `spotlight-testing on` checkpoints the target root before spotlight starts. That checkpoint is restored when spotlight stops, so tracked files, non-ignored untracked files, and the index return to their startup state.
+
+`spotlight-testing stop` is the more aggressive cleanup path. It stops Spotlight if it is active, restores the saved checkpoint when one exists, then optionally fetches, hard-resets to the requested ref, and runs `git clean -fd` so the target matches that ref except for ignored files.
 
 Workspace changes are synced into the target through named Git checkpoint refs. After startup Spotlight replays only the changed paths into the target worktree, which keeps unrelated runtime files stable while still mirroring ongoing worktree edits.
 

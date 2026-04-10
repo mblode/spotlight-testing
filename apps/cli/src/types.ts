@@ -30,6 +30,17 @@ export interface SyncResult {
   synced: number;
 }
 
+export interface StopOptions {
+  /** Target directory to stop/reset (defaults to the resolved CLI target) */
+  target?: string;
+  /** Whether to run git fetch before hard-reset (default: true) */
+  fetch?: boolean;
+  /** Remote to fetch from (default: "origin") */
+  remote?: string;
+  /** Ref to reset to after fetch (default: "<remote>/main") */
+  branch?: string;
+}
+
 export interface CheckpointSaveOptions {
   force?: boolean;
   id?: string;
