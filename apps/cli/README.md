@@ -47,10 +47,16 @@ Stop syncing and restore the target:
 spotlight-testing off
 ```
 
-Stop spotlight if needed, then reset and clean the target repo:
+Stop spotlight if needed, then fetch, reset, and clean the target repo:
 
 ```bash
-spotlight-testing stop --branch main
+spotlight-testing off --align
+```
+
+Reset to a specific ref without fetching:
+
+```bash
+spotlight-testing off --reset-to main --no-fetch
 ```
 
 Check the current sync status:
@@ -59,13 +65,13 @@ Check the current sync status:
 spotlight-testing status
 ```
 
-`on`, `off`, and `stop` keep default output minimal. Use `status` when you need the full active-session details.
+`on`, `off`, and `status` keep default output minimal. Use `status` when you need the full active-session details.
 
 ## Target State
 
-`spotlight-testing on` checkpoints the target root before spotlight starts. That checkpoint is restored when spotlight stops, so tracked files, non-ignored untracked files, and the index return to their startup state.
+`spotlight-testing on` checkpoints the target root before spotlight starts. Plain `spotlight-testing off` restores that checkpoint, so tracked files, non-ignored untracked files, and the index return to their startup state.
 
-`spotlight-testing stop` is the more aggressive cleanup path. It stops Spotlight if it is active, restores the saved checkpoint when one exists, then optionally fetches, hard-resets to the requested ref, and runs `git clean -fd` so the target matches that ref except for ignored files.
+`spotlight-testing off --align` and `spotlight-testing off --reset-to <ref>` are the aggressive cleanup paths. They stop Spotlight if it is active, restore the saved checkpoint when one exists, then optionally fetch, hard-reset to the requested ref, and run `git clean -fd` so the target matches that ref except for ignored files.
 
 Workspace changes are synced into the target through named Git checkpoint refs. After startup Spotlight replays only the changed paths into the target worktree, which keeps unrelated runtime files stable while still mirroring ongoing worktree edits.
 
@@ -84,6 +90,16 @@ Arguments:
 Options:
   -t, --target <path>          Target directory to sync into
   -d, --debounce <ms>          Debounce interval in milliseconds (default: 300)
+  -h, --help                   display help for command
+
+Usage: spotlight-testing off [options]
+
+Options:
+  --align                      Reset the target repo to <remote>/main after stopping spotlight
+  --reset-to <ref>             Reset the target repo to a specific Git ref after stopping spotlight
+  -t, --target <path>          Target directory to reset
+  -r, --remote <name>          Remote to fetch from (default: "origin")
+  --no-fetch                   Skip git fetch before reset
   -h, --help                   display help for command
 ```
 

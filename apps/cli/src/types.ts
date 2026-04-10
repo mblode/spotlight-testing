@@ -30,8 +30,8 @@ export interface SyncResult {
   synced: number;
 }
 
-export interface StopOptions {
-  /** Target directory to stop/reset (defaults to the resolved CLI target) */
+export interface ResetTargetOptions {
+  /** Target directory to reset (defaults to the resolved CLI target) */
   target?: string;
   /** Whether to run git fetch before hard-reset (default: true) */
   fetch?: boolean;

@@ -34,7 +34,7 @@ import {
   writeLockfile,
 } from "./lockfile.js";
 import { formatCommit, showActivity, showError, showInfo, showSuccess } from "./output.js";
-import type { SpotlightOptions, SpotlightState, StopOptions, SyncResult } from "./types.js";
+import type { ResetTargetOptions, SpotlightOptions, SpotlightState, SyncResult } from "./types.js";
 import { createWatcher } from "./watcher.js";
 import type { WatcherHandle } from "./watcher.js";
 
@@ -255,7 +255,7 @@ export const stopSpotlightSession = (state: SpotlightState): void => {
   }
 };
 
-export const stopAndReset = (options: StopOptions = {}): void => {
+export const resetTarget = (options: ResetTargetOptions = {}): void => {
   const remote = options.remote ?? "origin";
   const branch = options.branch ?? `${remote}/main`;
   const shouldFetch = options.fetch !== false;

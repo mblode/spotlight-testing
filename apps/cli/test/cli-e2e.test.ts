@@ -140,7 +140,7 @@ describe.skipIf(process.platform !== "darwin")("cli e2e", { timeout: 90_000 }, (
     }
   });
 
-  test("spotlight-testing stop resets to the requested ref and cleans target files", async () => {
+  test("spotlight-testing off --reset-to resets to the requested ref and cleans target files", async () => {
     const fixture = createRepoFixture({
       "app.txt": "initial\n",
     });
@@ -165,7 +165,7 @@ describe.skipIf(process.platform !== "darwin")("cli e2e", { timeout: 90_000 }, (
         () => existsSync(lockfilePath) && readTextFile(fixture.root, "app.txt") === "updated",
       );
 
-      const stopResult = spawnSync("node", [cliPath, "stop", "--no-fetch", "--branch", "main"], {
+      const stopResult = spawnSync("node", [cliPath, "off", "--reset-to", "main", "--no-fetch"], {
         cwd: fixture.worktree,
         encoding: "utf8",
         env: processEnv,

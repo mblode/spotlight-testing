@@ -23,12 +23,12 @@ const mocks = vi.hoisted(() => ({
   listActiveLockfiles: vi.fn(),
   readActiveLockfile: vi.fn(),
   readLockfile: vi.fn(),
+  resetTarget: vi.fn(),
   showError: vi.fn(),
   showInfo: vi.fn(),
   showSpotlightStatus: vi.fn(),
   showSuccess: vi.fn(),
   spotlight: vi.fn(),
-  stopAndReset: vi.fn(),
   stopSpotlightSession: vi.fn(),
 }));
 
@@ -40,8 +40,8 @@ const mockCliDependencies = (): void => {
   }));
 
   vi.doMock("../src/spotlight.js", () => ({
+    resetTarget: mocks.resetTarget,
     spotlight: mocks.spotlight,
-    stopAndReset: mocks.stopAndReset,
     stopSpotlightSession: mocks.stopSpotlightSession,
   }));
 
@@ -87,12 +87,12 @@ afterEach(() => {
   mocks.listActiveLockfiles.mockReset();
   mocks.readActiveLockfile.mockReset();
   mocks.readLockfile.mockReset();
+  mocks.resetTarget.mockReset();
   mocks.showError.mockReset();
   mocks.showInfo.mockReset();
   mocks.showSpotlightStatus.mockReset();
   mocks.showSuccess.mockReset();
   mocks.spotlight.mockReset();
-  mocks.stopAndReset.mockReset();
   mocks.stopSpotlightSession.mockReset();
 });
 
@@ -295,7 +295,7 @@ describe("cli smoke", () => {
     }
   });
 
-  test("stop calls stopAndReset with defaults from the current repo root", async () => {
+  test("off --align calls resetTarget with defaults from the current repo root", async () => {
     mocks.listActiveLockfiles.mockReturnValue([]);
     mocks.readActiveLockfile.mockReturnValue(null);
     mocks.readLockfile.mockReturnValue(null);
@@ -303,7 +303,7 @@ describe("cli smoke", () => {
     mocks.getGitRoot.mockReturnValue("/tmp/main-repo");
     mocks.isGitRepo.mockReturnValue(true);
     mockCliDependencies();
-    const restoreArgv = setArgv(["node", "spotlight-testing", "stop", "--no-fetch"]);
+    const restoreArgv = setArgv(["node", "spotlight-testing", "off", "--align", "--no-fetch"]);
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/main-repo");
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("process.exit should not be called");
@@ -311,7 +311,7 @@ describe("cli smoke", () => {
 
     try {
       await import("../src/cli.js");
-      expect(mocks.stopAndReset).toHaveBeenCalledWith({
+      expect(mocks.resetTarget).toHaveBeenCalledWith({
         branch: "origin/main",
         fetch: false,
         remote: "origin",
@@ -324,13 +324,13 @@ describe("cli smoke", () => {
     }
   });
 
-  test("stop resolves the main checkout when run from a linked worktree", async () => {
+  test("off --align resolves the main checkout when run from a linked worktree", async () => {
     mocks.listActiveLockfiles.mockReturnValue([]);
     mocks.readActiveLockfile.mockReturnValue(null);
     mocks.readLockfile.mockReturnValue(null);
     mocks.getMainWorktreeRoot.mockReturnValue("/tmp/main-repo");
     mockCliDependencies();
-    const restoreArgv = setArgv(["node", "spotlight-testing", "stop", "--no-fetch"]);
+    const restoreArgv = setArgv(["node", "spotlight-testing", "off", "--align", "--no-fetch"]);
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/worktree");
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("process.exit should not be called");
@@ -338,7 +338,7 @@ describe("cli smoke", () => {
 
     try {
       await import("../src/cli.js");
-      expect(mocks.stopAndReset).toHaveBeenCalledWith({
+      expect(mocks.resetTarget).toHaveBeenCalledWith({
         branch: "origin/main",
         fetch: false,
         remote: "origin",
@@ -351,7 +351,7 @@ describe("cli smoke", () => {
     }
   });
 
-  test("stop uses the scoped spotlight target before repo inference", async () => {
+  test("off --reset-to uses the scoped spotlight target before repo inference", async () => {
     const state = buildState({ targetPath: "/tmp/scoped-target" });
 
     mocks.listActiveLockfiles.mockReturnValue([]);
@@ -359,15 +359,22 @@ describe("cli smoke", () => {
     mocks.readLockfile.mockReturnValue(state);
     mocks.getMainWorktreeRoot.mockReturnValue("/tmp/main-repo");
     mockCliDependencies();
-    const restoreArgv = setArgv(["node", "spotlight-testing", "stop", "--no-fetch"]);
+    const restoreArgv = setArgv([
+      "node",
+      "spotlight-testing",
+      "off",
+      "--reset-to",
+      "HEAD",
+      "--no-fetch",
+    ]);
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("process.exit should not be called");
     }) as never);
 
     try {
       await import("../src/cli.js");
-      expect(mocks.stopAndReset).toHaveBeenCalledWith({
-        branch: "origin/main",
+      expect(mocks.resetTarget).toHaveBeenCalledWith({
+        branch: "HEAD",
         fetch: false,
         remote: "origin",
         target: "/tmp/scoped-target",
@@ -378,7 +385,7 @@ describe("cli smoke", () => {
     }
   });
 
-  test("stop falls back to the only active spotlight outside repo context", async () => {
+  test("off --align falls back to the only active spotlight outside repo context", async () => {
     const state = buildState({ targetPath: "/tmp/active-target" });
 
     mocks.listActiveLockfiles.mockReturnValue([state]);
@@ -387,7 +394,7 @@ describe("cli smoke", () => {
     mocks.getMainWorktreeRoot.mockReturnValue(null);
     mocks.isGitRepo.mockReturnValue(false);
     mockCliDependencies();
-    const restoreArgv = setArgv(["node", "spotlight-testing", "stop", "--no-fetch"]);
+    const restoreArgv = setArgv(["node", "spotlight-testing", "off", "--align", "--no-fetch"]);
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/not-a-repo");
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("process.exit should not be called");
@@ -395,7 +402,7 @@ describe("cli smoke", () => {
 
     try {
       await import("../src/cli.js");
-      expect(mocks.stopAndReset).toHaveBeenCalledWith({
+      expect(mocks.resetTarget).toHaveBeenCalledWith({
         branch: "origin/main",
         fetch: false,
         remote: "origin",
@@ -408,7 +415,7 @@ describe("cli smoke", () => {
     }
   });
 
-  test("stop prefers the current repo over an unrelated active spotlight", async () => {
+  test("off --align prefers the current repo over an unrelated active spotlight", async () => {
     const unrelatedState = buildState({ targetPath: "/tmp/other-target" });
 
     mocks.listActiveLockfiles.mockReturnValue([unrelatedState]);
@@ -418,7 +425,7 @@ describe("cli smoke", () => {
     mocks.getGitRoot.mockReturnValue("/tmp/current-repo");
     mocks.isGitRepo.mockReturnValue(true);
     mockCliDependencies();
-    const restoreArgv = setArgv(["node", "spotlight-testing", "stop", "--no-fetch"]);
+    const restoreArgv = setArgv(["node", "spotlight-testing", "off", "--align", "--no-fetch"]);
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/current-repo");
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("process.exit should not be called");
@@ -426,7 +433,7 @@ describe("cli smoke", () => {
 
     try {
       await import("../src/cli.js");
-      expect(mocks.stopAndReset).toHaveBeenCalledWith({
+      expect(mocks.resetTarget).toHaveBeenCalledWith({
         branch: "origin/main",
         fetch: false,
         remote: "origin",
@@ -439,14 +446,14 @@ describe("cli smoke", () => {
     }
   });
 
-  test("stop exits with error when no target can be determined", async () => {
+  test("off --align exits with error when no target can be determined", async () => {
     mocks.listActiveLockfiles.mockReturnValue([]);
     mocks.readActiveLockfile.mockReturnValue(null);
     mocks.readLockfile.mockReturnValue(null);
     mocks.getMainWorktreeRoot.mockReturnValue(null);
     mocks.isGitRepo.mockReturnValue(false);
     mockCliDependencies();
-    const restoreArgv = setArgv(["node", "spotlight-testing", "stop"]);
+    const restoreArgv = setArgv(["node", "spotlight-testing", "off", "--align"]);
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/not-a-repo");
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
 
@@ -462,18 +469,63 @@ describe("cli smoke", () => {
     }
   });
 
-  test("stop surfaces cleanup errors", async () => {
+  test("off rejects reset-only flags without --align or --reset-to", async () => {
+    mocks.listActiveLockfiles.mockReturnValue([]);
+    mocks.readActiveLockfile.mockReturnValue(null);
+    mocks.readLockfile.mockReturnValue(null);
+    mockCliDependencies();
+    const restoreArgv = setArgv(["node", "spotlight-testing", "off", "--no-fetch"]);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+
+    try {
+      await import("../src/cli.js");
+      expect(mocks.showError).toHaveBeenCalledWith(
+        "Cleanup error: Reset options require --align or --reset-to <ref>.",
+      );
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    } finally {
+      restoreArgv();
+    }
+  });
+
+  test("off rejects --align together with --reset-to", async () => {
+    mocks.listActiveLockfiles.mockReturnValue([]);
+    mocks.readActiveLockfile.mockReturnValue(null);
+    mocks.readLockfile.mockReturnValue(null);
+    mockCliDependencies();
+    const restoreArgv = setArgv([
+      "node",
+      "spotlight-testing",
+      "off",
+      "--align",
+      "--reset-to",
+      "HEAD",
+    ]);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+
+    try {
+      await import("../src/cli.js");
+      expect(mocks.showError).toHaveBeenCalledWith(
+        "Cleanup error: Choose either --align or --reset-to <ref>, not both.",
+      );
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    } finally {
+      restoreArgv();
+    }
+  });
+
+  test("off --align surfaces cleanup errors", async () => {
     mocks.listActiveLockfiles.mockReturnValue([]);
     mocks.readActiveLockfile.mockReturnValue(null);
     mocks.readLockfile.mockReturnValue(null);
     mocks.getGitRoot.mockReturnValue("/tmp/main-repo");
     mocks.getMainWorktreeRoot.mockReturnValue(null);
     mocks.isGitRepo.mockReturnValue(true);
-    mocks.stopAndReset.mockImplementation(() => {
+    mocks.resetTarget.mockImplementation(() => {
       throw new Error("reset failed");
     });
     mockCliDependencies();
-    const restoreArgv = setArgv(["node", "spotlight-testing", "stop"]);
+    const restoreArgv = setArgv(["node", "spotlight-testing", "off", "--align"]);
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
 
     try {

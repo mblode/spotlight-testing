@@ -32,13 +32,19 @@ Stop and restore:
 spotlight-testing off
 ```
 
+Reset the repo root to `origin/main` after stopping spotlight:
+
+```bash
+spotlight-testing off --align
+```
+
 Check status:
 
 ```bash
 spotlight-testing status
 ```
 
-Edits go in the worktree, testing happens in the repo root. When you stop, the repo root goes back to how it was before.
+Edits go in the worktree, testing happens in the repo root. Plain `off` restores the repo root to how it was before, while `off --align` does the stronger cleanup and realignment flow.
 
 ## License
 
