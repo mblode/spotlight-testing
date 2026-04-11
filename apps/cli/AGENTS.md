@@ -10,8 +10,8 @@ Checkpoint git worktree changes into a main repo directory for testing with a si
 - `npm run check-types` — `tsc --noEmit`
 - `npm run lint` — `oxlint .`
 - `spotlight-testing off` — stop spotlight and restore the saved target checkpoint
-- `spotlight-testing off --align [--target <path>] [--remote <name>] [--no-fetch]` — stop spotlight if needed, then reset and clean the target repo
-- `spotlight-testing off --reset-to <ref> [--target <path>] [--remote <name>] [--no-fetch]` — stop spotlight if needed, then reset and clean the target repo to a specific ref
+- `spotlight-testing reset [--target <path>] [--remote <name>] [--no-fetch]` — stop spotlight if needed, then reset and clean the target repo
+- `spotlight-testing reset --to <ref> [--target <path>] [--remote <name>] [--no-fetch]` — stop spotlight if needed, then reset and clean the target repo to a specific ref
 
 All commands run from repo root via turbo. Direct workspace execution: `cd apps/cli && npx tsdown`.
 
@@ -19,7 +19,7 @@ All commands run from repo root via turbo. Direct workspace execution: `cd apps/
 
 ```
 src/
-  cli.ts          # Commander entry point (on, off, status)
+  cli.ts          # Commander entry point (on, off, reset, status)
   index.ts        # Public API exports
   types.ts        # Shared type definitions
   spotlight.ts    # Core orchestration (workspace checkpoint, target checkpoint, watch loop, restore)
@@ -35,8 +35,8 @@ src/
 - **ESM only**: `"type": "module"` throughout. Use `.js` extensions in all imports.
 - **Dual build**: `tsdown.config.ts` produces two separate entry points -> `cli.js` (with shebang, no .d.ts) and `index.js` (with .d.ts, no shebang). Do not merge them into one build.
 - **CLI output**: Use `chalk` for inline emphasis and `@clack/prompts` for structured CLI output, notes, logs, and spinners. Do not add `ora` or raw ANSI strings.
-- **Minimal default UX**: Keep `on`, `off`, and `status` terse. Rich session detail belongs in `spotlight-testing status`, not the default startup flow.
-- **Off modes**: Plain `off` restores the saved target checkpoint. `off --align` and `off --reset-to <ref>` are the aggressive cleanup paths that stop spotlight, then reset and clean the target repo.
+- **Minimal default UX**: Keep `on`, `off`, `reset`, and `status` terse. Rich session detail belongs in `spotlight-testing status`, not the default startup flow.
+- **Reset vs off**: Plain `off` restores the saved target checkpoint. `reset` and `reset --to <ref>` are the aggressive cleanup paths that stop spotlight, then reset and clean the target repo.
 - **macOS only**: Spotlight uses recursive watching semantics that match `watchexec`-style behavior. Keep the watcher serialized and event-coalesced.
 - **Checkpoint refs**: Workspace state is stored under named refs, not temporary stash entries or ad hoc commits.
 - **Target checkpoint**: Spotlight saves the target root at startup and restores it on exit with destructive Git operations.

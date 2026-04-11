@@ -33,9 +33,6 @@ const normalizedArgv = shouldDefaultToOn(rawArgs)
   ? [...process.argv.slice(0, 2), "on", ...rawArgs]
   : process.argv;
 
-const hasArg = (args: string[], flags: string[]): boolean =>
-  args.some((arg) => flags.includes(arg) || flags.some((flag) => arg.startsWith(`${flag}=`)));
-
 const getTargetPath = (worktreePath: string, explicitTarget?: string): string | null => {
   if (explicitTarget) {
     return resolve(explicitTarget);
@@ -124,9 +121,6 @@ const getResetTargetPath = (explicitTarget?: string): string | null => {
   return getOnlyActiveSpotlightState()?.targetPath ?? null;
 };
 
-const usedOffResetOnlyFlags = (): boolean =>
-  hasArg(rawArgs, ["--target", "-t", "--remote", "-r", "--reset-to", "--no-fetch"]);
-
 program
   .name("spotlight-testing")
   .description(
@@ -165,69 +159,54 @@ program
 program
   .command("off")
   .description("Stop a running spotlight and restore the target directory")
-  .option("--align", "Reset the target repo to <remote>/main after stopping spotlight")
-  .option(
-    "--reset-to <ref>",
-    "Reset the target repo to a specific Git ref after stopping spotlight",
-  )
+  .action(() => {
+    try {
+      const state = getScopedRestorableSpotlightState();
+
+      if (!state) {
+        showInfo("No spotlight is running.");
+        return;
+      }
+
+      showInfo("Stopping spotlight...");
+      stopSpotlightSession(state);
+      showSuccess("Spotlight stopped");
+    } catch (error) {
+      showError(`Cleanup error: ${error instanceof Error ? error.message : error}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("reset")
+  .description("Stop spotlight if needed, then reset and clean the target directory")
   .option("-t, --target <path>", "Target directory to reset")
   .option("-r, --remote <name>", "Remote to fetch from", "origin")
+  .option("--to <ref>", "Ref to reset to after fetch (default: <remote>/main)")
   .option("--no-fetch", "Skip git fetch before reset")
-  .action(
-    (opts: {
-      align?: boolean;
-      fetch: boolean;
-      remote: string;
-      resetTo?: string;
-      target?: string;
-    }) => {
-      try {
-        const shouldReset = opts.align || Boolean(opts.resetTo);
+  .action((opts: { fetch: boolean; remote: string; target?: string; to?: string }) => {
+    try {
+      const targetPath = getResetTargetPath(opts.target);
 
-        if (opts.align && opts.resetTo) {
-          throw new Error("Choose either --align or --reset-to <ref>, not both.");
-        }
-
-        if (!shouldReset) {
-          if (usedOffResetOnlyFlags()) {
-            throw new Error("Reset options require --align or --reset-to <ref>.");
-          }
-
-          const state = getScopedRestorableSpotlightState();
-
-          if (!state) {
-            showInfo("No spotlight is running.");
-            return;
-          }
-
-          showInfo("Stopping spotlight...");
-          stopSpotlightSession(state);
-          showSuccess("Spotlight stopped");
-          return;
-        }
-
-        const targetPath = getResetTargetPath(opts.target);
-
-        if (!targetPath) {
-          showError(
-            "Could not determine a target. Run from inside the repo, use a linked worktree, or pass --target <path>.",
-          );
-          process.exit(1);
-          return;
-        }
-
-        resetTarget({
-          branch: opts.resetTo ?? `${opts.remote}/main`,
-          fetch: opts.fetch,
-          remote: opts.remote,
-          target: targetPath,
-        });
-      } catch (error) {
-        showError(`Cleanup error: ${error instanceof Error ? error.message : error}`);
+      if (!targetPath) {
+        showError(
+          "Could not determine a target. Run from inside the repo, use a linked worktree, or pass --target <path>.",
+        );
         process.exit(1);
+        return;
       }
-    },
-  );
+
+      resetTarget({
+        branch: opts.to ?? `${opts.remote}/main`,
+        fetch: opts.fetch,
+        remote: opts.remote,
+        target: targetPath,
+      });
+    } catch (error) {
+      showError(`Cleanup error: ${error instanceof Error ? error.message : error}`);
+      process.exit(1);
+    }
+  });
 
 program
   .command("status")

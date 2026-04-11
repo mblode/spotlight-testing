@@ -50,13 +50,13 @@ spotlight-testing off
 Stop spotlight if needed, then fetch, reset, and clean the target repo:
 
 ```bash
-spotlight-testing off --align
+spotlight-testing reset
 ```
 
 Reset to a specific ref without fetching:
 
 ```bash
-spotlight-testing off --reset-to main --no-fetch
+spotlight-testing reset --to main --no-fetch
 ```
 
 Check the current sync status:
@@ -71,7 +71,7 @@ spotlight-testing status
 
 `spotlight-testing on` checkpoints the target root before spotlight starts. Plain `spotlight-testing off` restores that checkpoint, so tracked files, non-ignored untracked files, and the index return to their startup state.
 
-`spotlight-testing off --align` and `spotlight-testing off --reset-to <ref>` are the aggressive cleanup paths. They stop Spotlight if it is active, restore the saved checkpoint when one exists, then optionally fetch, hard-reset to the requested ref, and run `git clean -fd` so the target matches that ref except for ignored files.
+`spotlight-testing reset` and `spotlight-testing reset --to <ref>` are the aggressive cleanup paths. They stop Spotlight if it is active, restore the saved checkpoint when one exists, then optionally fetch, hard-reset to the requested ref, and run `git clean -fd` so the target matches that ref except for ignored files.
 
 Workspace changes are synced into the target through named Git checkpoint refs. After startup Spotlight replays only the changed paths into the target worktree, which keeps unrelated runtime files stable while still mirroring ongoing worktree edits.
 
@@ -92,11 +92,10 @@ Options:
   -d, --debounce <ms>          Debounce interval in milliseconds (default: 300)
   -h, --help                   display help for command
 
-Usage: spotlight-testing off [options]
+Usage: spotlight-testing reset [options]
 
 Options:
-  --align                      Reset the target repo to <remote>/main after stopping spotlight
-  --reset-to <ref>             Reset the target repo to a specific Git ref after stopping spotlight
+  --to <ref>                   Ref to reset to after fetch (default: <remote>/main)
   -t, --target <path>          Target directory to reset
   -r, --remote <name>          Remote to fetch from (default: "origin")
   --no-fetch                   Skip git fetch before reset
