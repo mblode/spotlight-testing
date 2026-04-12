@@ -1,5 +1,11 @@
 # spotlight-testing
 
+## 0.0.8
+
+### Patch Changes
+
+- Fix spotlight off checkpoint cleanup and fold aggressive reset into the off command.
+
 ## 0.0.7
 
 ### Patch Changes
