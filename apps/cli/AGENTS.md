@@ -36,7 +36,7 @@ src/
 - **Dual build**: `tsdown.config.ts` produces two separate entry points -> `cli.js` (with shebang, no .d.ts) and `index.js` (with .d.ts, no shebang). Do not merge them into one build.
 - **CLI output**: Use `chalk` for inline emphasis and `@clack/prompts` for structured CLI output, notes, logs, and spinners. Do not add `ora` or raw ANSI strings.
 - **Minimal default UX**: Keep `on`, `off`, `reset`, and `status` terse. Rich session detail belongs in `spotlight-testing status`, not the default startup flow.
-- **Reset vs off**: Plain `off` restores the saved target checkpoint. `reset` and `reset --to <ref>` are the aggressive cleanup paths that stop spotlight, then reset and clean the target repo.
+- **Reset vs off**: Plain `off` restores the saved target checkpoint and clears spotlight checkpoint refs for that repo. `reset` and `reset --to <ref>` are the aggressive repo-alignment paths that stop spotlight, then reset and clean the target repo.
 - **macOS only**: Spotlight uses recursive watching semantics that match `watchexec`-style behavior. Keep the watcher serialized and event-coalesced.
 - **Checkpoint refs**: Workspace state is stored under named refs, not temporary stash entries or ad hoc commits.
 - **Target checkpoint**: Spotlight saves the target root at startup and restores it on exit with destructive Git operations.

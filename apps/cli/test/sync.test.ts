@@ -110,7 +110,7 @@ describe("sync and restore", { timeout: 15_000 }, () => {
     }
   });
 
-  test("restore replays the target-start checkpoint and brings back dirty target state", () => {
+  test("restore replays the target-start checkpoint, brings back dirty target state, and removes orphan checkpoint refs", () => {
     const fixture = createRepoFixture({
       "app.txt": "initial\n",
       "staged.txt": "before-stage\n",
@@ -124,6 +124,7 @@ describe("sync and restore", { timeout: 15_000 }, () => {
 
       const targetCheckpointId = "cp-target-restore-test";
       const workspaceCheckpointId = "cp-workspace-test";
+      const orphanCheckpointId = "cp-orphan-extra";
       const targetRestoreLabel = getHeadLabel(fixture.root);
 
       saveCheckpoint(fixture.root, { id: targetCheckpointId });
@@ -131,6 +132,7 @@ describe("sync and restore", { timeout: 15_000 }, () => {
       writeTextFile(fixture.worktree, "nested/new.txt", "new\n");
       saveCheckpoint(fixture.worktree, { force: true, id: workspaceCheckpointId });
       restoreCheckpoint(fixture.root, workspaceCheckpointId);
+      saveCheckpoint(fixture.root, { force: true, id: orphanCheckpointId });
 
       const state = buildState(
         fixture,
@@ -140,6 +142,9 @@ describe("sync and restore", { timeout: 15_000 }, () => {
       );
       writeLockfile(state, fixture.root);
       expect(readLockfile(fixture.root)).not.toBeNull();
+      expect(getCheckpointNamespaceRefs(fixture.root)).toContain(
+        `refs/conductor-checkpoints/${orphanCheckpointId}`,
+      );
 
       restore(fixture.root);
 

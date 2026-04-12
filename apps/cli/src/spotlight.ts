@@ -136,7 +136,7 @@ const deleteAllCheckpointRefs = (cwd: string): void => {
     try {
       deleteGitRef(cwd, ref);
     } catch {
-      // Ignore orphaned ref cleanup failures during aggressive stop/reset.
+      // Ignore checkpoint ref cleanup failures during restore/reset shutdown.
     }
   }
 };
@@ -204,10 +204,7 @@ const applyWorkspaceCheckpoint = (
 
 const restoreFromState = (state: SpotlightState): string => {
   restoreCheckpoint(state.targetPath, state.targetCheckpointId);
-  ensureCheckpointsDeleted(state.targetPath, [
-    state.workspaceCheckpointId,
-    state.targetCheckpointId,
-  ]);
+  deleteAllCheckpointRefs(state.targetPath);
   removeLockfile(state.targetPath);
   return state.targetRestoreLabel;
 };
