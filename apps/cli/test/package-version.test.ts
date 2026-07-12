@@ -7,7 +7,7 @@ import { getPackageVersion } from "../src/package-version.js";
 describe("package version", () => {
   test("reads the current package version from package.json", () => {
     const packageJson = JSON.parse(
-      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+      readFileSync(new URL("../package.json", import.meta.url), "utf8")
     ) as {
       version: string;
     };

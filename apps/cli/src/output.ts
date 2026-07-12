@@ -47,17 +47,23 @@ export const showSpotlightStatus = (state: SpotlightState): void => {
       { label: "Into", value: formatPath(state.targetPath) },
       { label: "Started", value: state.startedAt },
       { label: "Last Sync", value: state.lastSyncAt ?? formatDim("n/a") },
-      { label: "Workspace CP", value: formatAccent(state.workspaceCheckpointId) },
+      {
+        label: "Workspace CP",
+        value: formatAccent(state.workspaceCheckpointId),
+      },
       {
         label: "Current Commit",
         value: formatCommit(state.workspaceCheckpointCommit.slice(0, 12)),
       },
       { label: "Restore CP", value: formatAccent(state.targetCheckpointId) },
-      { label: "Restore Target", value: formatAccent(state.targetRestoreLabel) },
+      {
+        label: "Restore Target",
+        value: formatAccent(state.targetRestoreLabel),
+      },
       { label: "Watcher", value: formatDim(state.watchBackend) },
     ]
       .map(formatStatusLine)
       .join("\n"),
-    formatHeading("Spotlight ON"),
+    formatHeading("Spotlight ON")
   );
 };

@@ -1,7 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
-import { dirname, join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  mkdtempSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 const GIT_ENV = {
   ...process.env,
@@ -38,7 +45,11 @@ export const cleanupTempDir = (dir: string): void => {
   rmSync(dir, { force: true, recursive: true });
 };
 
-export const writeTextFile = (root: string, relativePath: string, contents: string): void => {
+export const writeTextFile = (
+  root: string,
+  relativePath: string,
+  contents: string
+): void => {
   const filePath = join(root, relativePath);
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, contents);
@@ -47,13 +58,18 @@ export const writeTextFile = (root: string, relativePath: string, contents: stri
 export const readTextFile = (root: string, relativePath: string): string =>
   readFileSync(join(root, relativePath), "utf8").trim();
 
-export const readTextFileIfExists = (root: string, relativePath: string): string | null => {
+export const readTextFileIfExists = (
+  root: string,
+  relativePath: string
+): string | null => {
   const filePath = join(root, relativePath);
   return existsSync(filePath) ? readFileSync(filePath, "utf8").trim() : null;
 };
 
 export const readGitTree = (cwd: string, ref: string): string[] =>
-  execGit(cwd, ["ls-tree", "-r", "--name-only", ref]).split("\n").filter(Boolean);
+  execGit(cwd, ["ls-tree", "-r", "--name-only", ref])
+    .split("\n")
+    .filter(Boolean);
 
 export const readCachedDiffNames = (cwd: string): string[] =>
   execGit(cwd, ["diff", "--cached", "--name-only"]).split("\n").filter(Boolean);
@@ -62,22 +78,35 @@ export const readGitCommonDir = (cwd: string): string =>
   execGit(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
 
 export const readGitPath = (cwd: string, relativePath: string): string =>
-  execGit(cwd, ["rev-parse", "--path-format=absolute", "--git-path", relativePath]);
+  execGit(cwd, [
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-path",
+    relativePath,
+  ]);
 
 export const getCheckpointNamespaceRefs = (cwd: string): string[] =>
-  execGit(cwd, ["for-each-ref", "refs/conductor-checkpoints", "--format=%(refname)"])
+  execGit(cwd, [
+    "for-each-ref",
+    "refs/conductor-checkpoints",
+    "--format=%(refname)",
+  ])
     .split("\n")
     .filter(Boolean);
 
 const DEFAULT_REPO_FILES: Record<string, string> = { "app.txt": "initial\n" };
 
-export const createRepoFixture = (files?: Record<string, string>): RepoFixture => {
+export const createRepoFixture = (
+  files?: Record<string, string>
+): RepoFixture => {
   const parent = createTempDir();
   const root = join(parent, "repo");
   mkdirSync(root, { recursive: true });
   execGit(root, ["init", "-b", "main"]);
 
-  for (const [relativePath, contents] of Object.entries(files ?? DEFAULT_REPO_FILES)) {
+  for (const [relativePath, contents] of Object.entries(
+    files ?? DEFAULT_REPO_FILES
+  )) {
     writeTextFile(root, relativePath, contents);
   }
 
@@ -91,14 +120,16 @@ export const createRepoFixture = (files?: Record<string, string>): RepoFixture =
 };
 
 export const createRepoFixtureWithoutWorktree = (
-  files?: Record<string, string>,
+  files?: Record<string, string>
 ): RepoOnlyFixture => {
   const parent = createTempDir();
   const root = join(parent, "repo");
   mkdirSync(root, { recursive: true });
   execGit(root, ["init", "-b", "main"]);
 
-  for (const [relativePath, contents] of Object.entries(files ?? DEFAULT_REPO_FILES)) {
+  for (const [relativePath, contents] of Object.entries(
+    files ?? DEFAULT_REPO_FILES
+  )) {
     writeTextFile(root, relativePath, contents);
   }
 

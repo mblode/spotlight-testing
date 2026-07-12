@@ -33,8 +33,19 @@ import {
   waitForLockfileRelease,
   writeLockfile,
 } from "./lockfile.js";
-import { formatCommit, showActivity, showError, showInfo, showSuccess } from "./output.js";
-import type { ResetTargetOptions, SpotlightOptions, SpotlightState, SyncResult } from "./types.js";
+import {
+  formatCommit,
+  showActivity,
+  showError,
+  showInfo,
+  showSuccess,
+} from "./output.js";
+import type {
+  ResetTargetOptions,
+  SpotlightOptions,
+  SpotlightState,
+  SyncResult,
+} from "./types.js";
 import { createWatcher } from "./watcher.js";
 import type { WatcherHandle } from "./watcher.js";
 
@@ -55,7 +66,9 @@ interface CheckpointDiff {
 
 type ApplyMode = "full" | "live";
 
-const formatBusyState = (busyState: ReturnType<typeof getGitBusyState>): string => {
+const formatBusyState = (
+  busyState: ReturnType<typeof getGitBusyState>
+): string => {
   switch (busyState) {
     case "busy:rebase": {
       return "a rebase is in progress";
@@ -91,7 +104,10 @@ const getRepoRoot = (dir: string, label: string): string => {
   return getGitRoot(dir);
 };
 
-const getNormalizedPaths = (worktreePath: string, targetPath: string): NormalizedPaths => {
+const getNormalizedPaths = (
+  worktreePath: string,
+  targetPath: string
+): NormalizedPaths => {
   const worktree = getRepoRoot(worktreePath, "Worktree");
   const target = getRepoRoot(targetPath, "Target");
 
@@ -107,21 +123,30 @@ const ensureReadyForSpotlight = (worktree: string, target: string): void => {
   }
 
   if (!isSameRepo(worktree, target)) {
-    throw new Error("Worktree and target must share the same git object database");
+    throw new Error(
+      "Worktree and target must share the same git object database"
+    );
   }
 
   const worktreeBusyState = getGitBusyState(worktree);
   if (worktreeBusyState !== "clean") {
-    throw new Error(`Cannot start Spotlight: ${formatBusyState(worktreeBusyState)} in worktree.`);
+    throw new Error(
+      `Cannot start Spotlight: ${formatBusyState(worktreeBusyState)} in worktree.`
+    );
   }
 
   const targetBusyState = getGitBusyState(target);
   if (targetBusyState !== "clean") {
-    throw new Error(`Cannot start Spotlight: ${formatBusyState(targetBusyState)} in target.`);
+    throw new Error(
+      `Cannot start Spotlight: ${formatBusyState(targetBusyState)} in target.`
+    );
   }
 };
 
-const ensureCheckpointsDeleted = (cwd: string, checkpointIds: string[]): void => {
+const ensureCheckpointsDeleted = (
+  cwd: string,
+  checkpointIds: string[]
+): void => {
   for (const checkpointId of checkpointIds) {
     try {
       deleteCheckpoint(cwd, checkpointId);
@@ -144,7 +169,7 @@ const deleteAllCheckpointRefs = (cwd: string): void => {
 const checkpointStateChanged = (
   cwd: string,
   previousRef: string,
-  nextRef: string,
+  nextRef: string
 ): CheckpointDiff => {
   const previousMetadata = readCheckpointMetadata(cwd, previousRef);
   const nextMetadata = readCheckpointMetadata(cwd, nextRef);
@@ -169,7 +194,7 @@ const applyWorkspaceCheckpoint = (
   target: string,
   workspaceCheckpointId: string,
   previousRef: string,
-  mode: ApplyMode,
+  mode: ApplyMode
 ): SyncResult => {
   saveCheckpoint(worktree, { force: true, id: workspaceCheckpointId });
   const checkpointCommit = getCheckpointCommit(worktree, workspaceCheckpointId);
@@ -210,7 +235,9 @@ const restoreFromState = (state: SpotlightState): string => {
 };
 
 export const restore = (targetPath: string): void => {
-  const target = isGitRepo(targetPath) ? getGitRoot(targetPath) : resolve(targetPath);
+  const target = isGitRepo(targetPath)
+    ? getGitRoot(targetPath)
+    : resolve(targetPath);
   const state = readLockfile(target);
 
   if (!state) {
@@ -256,7 +283,10 @@ export const resetTarget = (options: ResetTargetOptions = {}): void => {
   const remote = options.remote ?? "origin";
   const branch = options.branch ?? `${remote}/main`;
   const shouldFetch = options.fetch !== false;
-  const target = getRepoRoot(resolve(options.target ?? process.cwd()), "Target");
+  const target = getRepoRoot(
+    resolve(options.target ?? process.cwd()),
+    "Target"
+  );
   const state = readLockfile(target);
 
   if (state) {
@@ -292,34 +322,46 @@ const reconcileExistingSpotlight = (target: string): void => {
 
   if (!isLocked(target)) {
     showActivity(
-      `Recovering stale spotlight from ${existing.worktreePath} (PID ${existing.pid})...`,
+      `Recovering stale spotlight from ${existing.worktreePath} (PID ${existing.pid})...`
     );
     stopSpotlightSession(existing);
     return;
   }
 
-  showActivity(`Replacing spotlight from ${existing.worktreePath} (PID ${existing.pid})...`);
+  showActivity(
+    `Replacing spotlight from ${existing.worktreePath} (PID ${existing.pid})...`
+  );
   stopSpotlightSession(existing);
 };
 
 const shouldSkipSync = (worktree: string, target: string): boolean => {
   const worktreeBusyState = getGitBusyState(worktree);
   if (worktreeBusyState !== "clean") {
-    showActivity(`Skipping sync: ${formatBusyState(worktreeBusyState)} in worktree`);
+    showActivity(
+      `Skipping sync: ${formatBusyState(worktreeBusyState)} in worktree`
+    );
     return true;
   }
 
   const targetBusyState = getGitBusyState(target);
   if (targetBusyState !== "clean") {
-    showActivity(`Skipping sync: ${formatBusyState(targetBusyState)} in target`);
+    showActivity(
+      `Skipping sync: ${formatBusyState(targetBusyState)} in target`
+    );
     return true;
   }
 
   return false;
 };
 
-export const syncOnce = (worktreePath: string, targetPath: string): SyncResult => {
-  const { target, worktree } = getNormalizedPaths(resolve(worktreePath), resolve(targetPath));
+export const syncOnce = (
+  worktreePath: string,
+  targetPath: string
+): SyncResult => {
+  const { target, worktree } = getNormalizedPaths(
+    resolve(worktreePath),
+    resolve(targetPath)
+  );
 
   ensureReadyForSpotlight(worktree, target);
 
@@ -334,13 +376,16 @@ export const syncOnce = (worktreePath: string, targetPath: string): SyncResult =
     saveCheckpoint(target, { id: targetCheckpointId });
     targetCheckpointSaved = true;
 
-    const targetCheckpointCommit = getCheckpointCommit(target, targetCheckpointId);
+    const targetCheckpointCommit = getCheckpointCommit(
+      target,
+      targetCheckpointId
+    );
     const result = applyWorkspaceCheckpoint(
       worktree,
       target,
       workspaceCheckpointId,
       targetCheckpointCommit,
-      "live",
+      "live"
     );
     workspaceCheckpointSaved = true;
     completed = true;
@@ -357,7 +402,10 @@ export const syncOnce = (worktreePath: string, targetPath: string): SyncResult =
     throw error;
   } finally {
     if (completed || targetCheckpointSaved || workspaceCheckpointSaved) {
-      ensureCheckpointsDeleted(target, [workspaceCheckpointId, targetCheckpointId]);
+      ensureCheckpointsDeleted(target, [
+        workspaceCheckpointId,
+        targetCheckpointId,
+      ]);
     }
   }
 };
@@ -365,7 +413,7 @@ export const syncOnce = (worktreePath: string, targetPath: string): SyncResult =
 export const spotlight = (options: SpotlightOptions): void => {
   const { target, worktree } = getNormalizedPaths(
     resolve(options.worktree),
-    resolve(options.target),
+    resolve(options.target)
   );
   const debounce = options.debounce ?? 300;
 
@@ -414,11 +462,16 @@ export const spotlight = (options: SpotlightOptions): void => {
         restoreFromState(state);
       } else if (targetCheckpointSaved) {
         restoreCheckpoint(target, targetCheckpointId);
-        ensureCheckpointsDeleted(target, [workspaceCheckpointId, targetCheckpointId]);
+        ensureCheckpointsDeleted(target, [
+          workspaceCheckpointId,
+          targetCheckpointId,
+        ]);
         removeLockfile(target);
       }
     } catch (error) {
-      showError(`Cleanup error: ${error instanceof Error ? error.message : String(error)}`);
+      showError(
+        `Cleanup error: ${error instanceof Error ? error.message : String(error)}`
+      );
       cleanupResult = "failed";
       return cleanupResult;
     }
@@ -458,7 +511,7 @@ export const spotlight = (options: SpotlightOptions): void => {
       target,
       workspaceCheckpointId,
       getCheckpointCommit(target, targetCheckpointId),
-      "full",
+      "full"
     );
     workspaceCheckpointSaved = true;
 
@@ -492,7 +545,10 @@ export const spotlight = (options: SpotlightOptions): void => {
     }
 
     if (targetCheckpointSaved || workspaceCheckpointSaved) {
-      ensureCheckpointsDeleted(target, [workspaceCheckpointId, targetCheckpointId]);
+      ensureCheckpointsDeleted(target, [
+        workspaceCheckpointId,
+        targetCheckpointId,
+      ]);
     }
 
     throw error;
@@ -517,7 +573,7 @@ export const spotlight = (options: SpotlightOptions): void => {
           target,
           workspaceCheckpointId,
           previousCommit,
-          "live",
+          "live"
         );
 
         if (!result.changedState) {
@@ -529,7 +585,7 @@ export const spotlight = (options: SpotlightOptions): void => {
         writeLockfile(state, target);
 
         showActivity(
-          `Synced: ${result.synced} changed files (${formatCommit(getShortSha(result.checkpointCommit))})`,
+          `Synced: ${result.synced} changed files (${formatCommit(getShortSha(result.checkpointCommit))})`
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

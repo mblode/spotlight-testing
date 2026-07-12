@@ -2,7 +2,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { CheckpointMetadata, CheckpointSaveOptions } from "./types.js";
 import {
   deleteGitRef,
   getChangedFiles,
@@ -13,6 +12,7 @@ import {
   runGit,
   tryRevParse,
 } from "./git.js";
+import type { CheckpointMetadata, CheckpointSaveOptions } from "./types.js";
 
 const ZERO_OID = "0000000000000000000000000000000000000000";
 const RESTORE_GIT_OPTIONS = {
@@ -28,9 +28,11 @@ const CHECKPOINT_AUTHOR_ENV = {
   GIT_COMMITTER_NAME: "Checkpointer",
 };
 
-const getCheckpointerRef = (id: string): string => `refs/conductor-checkpoints/${id}`;
+const getCheckpointerRef = (id: string): string =>
+  `refs/conductor-checkpoints/${id}`;
 
-const formatTimestamp = (): string => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+const formatTimestamp = (): string =>
+  new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
 const getDefaultCheckpointId = (): string => {
   const timestamp = formatTimestamp().replaceAll("-", "").replaceAll(":", "");
@@ -52,7 +54,7 @@ const getCheckpointMessage = (
   head: string,
   indexTree: string,
   worktreeTree: string,
-  created: string,
+  created: string
 ): string => `checkpoint:${id}
 head ${head}
 index-tree ${indexTree}
@@ -64,9 +66,12 @@ const getIndexTree = (cwd: string): string => {
   try {
     return runGit(["write-tree"], cwd);
   } catch (error) {
-    throw new Error("cannot save: index has unresolved merges (resolve conflicts first)", {
-      cause: error,
-    });
+    throw new Error(
+      "cannot save: index has unresolved merges (resolve conflicts first)",
+      {
+        cause: error,
+      }
+    );
   }
 };
 
@@ -89,10 +94,16 @@ const createCheckpointCommit = (
   id: string,
   head: string,
   indexTree: string,
-  worktreeTree: string,
+  worktreeTree: string
 ): string => {
   const created = formatTimestamp();
-  const message = getCheckpointMessage(id, head, indexTree, worktreeTree, created);
+  const message = getCheckpointMessage(
+    id,
+    head,
+    indexTree,
+    worktreeTree,
+    created
+  );
 
   return runGit(["commit-tree", worktreeTree], cwd, {
     env: {
@@ -104,7 +115,10 @@ const createCheckpointCommit = (
   });
 };
 
-export const saveCheckpoint = (cwd: string, options: CheckpointSaveOptions = {}): string => {
+export const saveCheckpoint = (
+  cwd: string,
+  options: CheckpointSaveOptions = {}
+): string => {
   const busyState = getGitBusyState(cwd);
 
   if (busyState !== "clean") {
@@ -115,7 +129,9 @@ export const saveCheckpoint = (cwd: string, options: CheckpointSaveOptions = {})
   const ref = getCheckpointerRef(id);
 
   if (tryRevParse(cwd, ref) && !options.force) {
-    throw new Error(`checkpoint '${id}' already exists (use --force to overwrite)`);
+    throw new Error(
+      `checkpoint '${id}' already exists (use --force to overwrite)`
+    );
   }
 
   const head = tryRevParse(cwd, "HEAD") ?? ZERO_OID;
@@ -130,12 +146,14 @@ export const saveCheckpoint = (cwd: string, options: CheckpointSaveOptions = {})
 export const readCheckpointMetadata = (
   cwd: string,
   ref: string,
-  options: { ignoreSignals?: boolean } = {},
+  options: { ignoreSignals?: boolean } = {}
 ): CheckpointMetadata => {
   const commitObject = readCommitObject(cwd, ref, options);
   const message = commitObject.split("\n\n").slice(1).join("\n\n");
   const [firstLine] = message.split("\n");
-  const id = firstLine.startsWith("checkpoint:") ? firstLine.slice("checkpoint:".length) : "";
+  const id = firstLine.startsWith("checkpoint:")
+    ? firstLine.slice("checkpoint:".length)
+    : "";
 
   return {
     commit: revParse(cwd, ref, options),
@@ -157,13 +175,23 @@ export const restoreCheckpoint = (cwd: string, id: string): string => {
   const metadata = readCheckpointMetadata(cwd, ref, RESTORE_GIT_OPTIONS);
 
   if (metadata.head === ZERO_OID) {
-    throw new Error("cannot restore: checkpoint saved with unborn HEAD (no commits)");
+    throw new Error(
+      "cannot restore: checkpoint saved with unborn HEAD (no commits)"
+    );
   }
 
   runGit(["reset", "--hard", metadata.head], cwd, RESTORE_GIT_OPTIONS);
-  runGit(["read-tree", "--reset", "-u", metadata.worktreeTree], cwd, RESTORE_GIT_OPTIONS);
+  runGit(
+    ["read-tree", "--reset", "-u", metadata.worktreeTree],
+    cwd,
+    RESTORE_GIT_OPTIONS
+  );
   runGit(["clean", "-fd"], cwd, RESTORE_GIT_OPTIONS);
-  runGit(["read-tree", "--reset", metadata.indexTree], cwd, RESTORE_GIT_OPTIONS);
+  runGit(
+    ["read-tree", "--reset", metadata.indexTree],
+    cwd,
+    RESTORE_GIT_OPTIONS
+  );
 
   return `restored checkpoint: ${id}`;
 };
@@ -175,5 +203,8 @@ export const deleteCheckpoint = (cwd: string, id: string): void => {
 export const getCheckpointCommit = (cwd: string, id: string): string =>
   revParse(cwd, getCheckpointerRef(id));
 
-export const getCheckpointChangedPaths = (cwd: string, fromRef: string, toRef: string): string[] =>
-  getChangedFiles(cwd, fromRef, toRef);
+export const getCheckpointChangedPaths = (
+  cwd: string,
+  fromRef: string,
+  toRef: string
+): string[] => getChangedFiles(cwd, fromRef, toRef);

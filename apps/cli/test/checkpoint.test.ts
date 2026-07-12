@@ -26,7 +26,9 @@ describe("checkpoint refs", () => {
       writeTextFile(fixture.worktree, "ignored.log", "ignored\n");
 
       const checkpointId = "cp-test-save";
-      expect(saveCheckpoint(fixture.worktree, { id: checkpointId })).toBe(checkpointId);
+      expect(saveCheckpoint(fixture.worktree, { id: checkpointId })).toBe(
+        checkpointId
+      );
 
       const checkpointRef = `refs/conductor-checkpoints/${checkpointId}`;
       expect(getCheckpointNamespaceRefs(fixture.root)).toContain(checkpointRef);
@@ -38,7 +40,9 @@ describe("checkpoint refs", () => {
 
       const metadata = readCheckpointMetadata(fixture.root, checkpointRef);
       expect(metadata.id).toBe(checkpointId);
-      expect(metadata.commit).toBe(getCheckpointCommit(fixture.root, checkpointId));
+      expect(metadata.commit).toBe(
+        getCheckpointCommit(fixture.root, checkpointId)
+      );
       expect(metadata.head).toMatch(/^[0-9a-f]{40}$/);
       expect(metadata.indexTree).toMatch(/^[0-9a-f]{40}$/);
       expect(metadata.worktreeTree).toMatch(/^[0-9a-f]{40}$/);
@@ -63,7 +67,9 @@ describe("checkpoint refs", () => {
       const secondCommit = getCheckpointCommit(fixture.worktree, checkpointId);
 
       expect(secondCommit).not.toBe(firstCommit);
-      expect(readCheckpointMetadata(fixture.root, secondCommit).id).toBe(checkpointId);
+      expect(readCheckpointMetadata(fixture.root, secondCommit).id).toBe(
+        checkpointId
+      );
       expect(readGitTree(fixture.root, secondCommit)).toEqual(["a.txt"]);
     } finally {
       cleanupTempDir(fixture.parent);

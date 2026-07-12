@@ -20,7 +20,9 @@ const SCOPED_LOCKFILE_PREFIX = "repo-";
 const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
 
 const getScopedLockfilePath = (repoPath: string): string => {
-  const repoKey = createHash("sha256").update(getGitCommonDir(repoPath)).digest("hex");
+  const repoKey = createHash("sha256")
+    .update(getGitCommonDir(repoPath))
+    .digest("hex");
   return join(DEFAULT_LOCKFILE_DIR, `${SCOPED_LOCKFILE_PREFIX}${repoKey}.lock`);
 };
 
@@ -93,20 +95,22 @@ const readLockfileAtPath = (lockfilePath: string): SpotlightState | null => {
     parsed = JSON.parse(readFileSync(lockfilePath, "utf8"));
   } catch {
     throw new Error(
-      `Incompatible spotlight lockfile at ${lockfilePath}. Remove it and start again.`,
+      `Incompatible spotlight lockfile at ${lockfilePath}. Remove it and start again.`
     );
   }
 
   if (!isSpotlightState(parsed)) {
     throw new Error(
-      `Incompatible spotlight lockfile at ${lockfilePath}. Remove it and start again.`,
+      `Incompatible spotlight lockfile at ${lockfilePath}. Remove it and start again.`
     );
   }
 
   return parsed;
 };
 
-const readActiveLockfileAtPath = (lockfilePath: string): SpotlightState | null => {
+const readActiveLockfileAtPath = (
+  lockfilePath: string
+): SpotlightState | null => {
   const state = readLockfileAtPath(lockfilePath);
 
   if (!state) {
@@ -122,7 +126,10 @@ const listScopedLockfiles = (): string[] => {
   }
 
   return readdirSync(DEFAULT_LOCKFILE_DIR)
-    .filter((entry) => entry.startsWith(SCOPED_LOCKFILE_PREFIX) && entry.endsWith(".lock"))
+    .filter(
+      (entry) =>
+        entry.startsWith(SCOPED_LOCKFILE_PREFIX) && entry.endsWith(".lock")
+    )
     .map((entry) => join(DEFAULT_LOCKFILE_DIR, entry));
 };
 
@@ -136,7 +143,9 @@ export const readLockfile = (repoPath?: string): SpotlightState | null => {
   return readLockfileAtPath(lockfilePath);
 };
 
-export const readActiveLockfile = (repoPath?: string): SpotlightState | null => {
+export const readActiveLockfile = (
+  repoPath?: string
+): SpotlightState | null => {
   const lockfilePath = getCurrentLockfilePath(repoPath);
 
   if (!lockfilePath) {
@@ -148,7 +157,9 @@ export const readActiveLockfile = (repoPath?: string): SpotlightState | null => 
 
 export const listActiveLockfiles = (): SpotlightState[] => {
   const explicitLockfile = process.env.SPOTLIGHT_LOCKFILE;
-  const lockfilePaths = explicitLockfile ? [explicitLockfile] : listScopedLockfiles();
+  const lockfilePaths = explicitLockfile
+    ? [explicitLockfile]
+    : listScopedLockfiles();
 
   const activeStates: SpotlightState[] = [];
 
@@ -173,7 +184,10 @@ export const isLocked = (repoPath?: string): boolean => {
   return readActiveLockfileAtPath(lockfilePath) !== null;
 };
 
-export const writeLockfile = (state: SpotlightState, repoPath = state.targetPath): void => {
+export const writeLockfile = (
+  state: SpotlightState,
+  repoPath = state.targetPath
+): void => {
   const lockfilePath = getCurrentLockfilePath(repoPath);
 
   if (!lockfilePath) {
@@ -197,7 +211,7 @@ export const removeLockfile = (repoPath?: string): void => {
 export const waitForLockfileRelease = (
   expectedPid: number,
   repoPath?: string,
-  timeoutMs = 10_000,
+  timeoutMs = 10_000
 ): void => {
   const lockfilePath = getCurrentLockfilePath(repoPath);
 
@@ -219,6 +233,6 @@ export const waitForLockfileRelease = (
 
   const active = readActiveLockfileAtPath(lockfilePath);
   throw new Error(
-    `Timed out waiting for spotlight to stop${active ? ` (PID ${active.pid}, syncing ${active.worktreePath})` : ""}.`,
+    `Timed out waiting for spotlight to stop${active ? ` (PID ${active.pid}, syncing ${active.worktreePath})` : ""}.`
   );
 };

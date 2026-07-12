@@ -4,6 +4,7 @@
     "apps/*"
   ],
   "scripts": {
+    "prepare": "lefthook install || true",
     "build": "turbo build",
     "dev": "turbo dev",
     "lint": "turbo lint",
@@ -18,15 +19,27 @@
     "release": "turbo build && changeset publish"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.0",
-    "knip": "^6.2.0",
-    "turbo": "^2.5.4",
-    "ultracite": "^7.2.2"
+    "@changesets/cli": "^2.31.0",
+    "knip": "^6.26.0",
+    "lefthook": "^2.1.10",
+    "oxfmt": "^0.58.0",
+    "oxlint": "^1.73.0",
+    "turbo": "^2.10.4",
+    "typescript": "7.0.2",
+    "ultracite": "7.9.3"
+  },
+  "overrides": {
+    "rolldown-plugin-dts": {
+      "typescript": "$typescript"
+    },
+    "tsdown": {
+      "typescript": "$typescript"
+    }
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
-  "packageManager": "npm@11.9.0",
+  "packageManager": "npm@12.0.1",
   "knip": {
     "ignoreDependencies": [
       "ultracite"

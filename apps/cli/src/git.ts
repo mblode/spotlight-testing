@@ -18,9 +18,15 @@ type ExecError = Error & {
   stdout?: Buffer | string;
 };
 
-type GitBusyState = "busy:cherry-pick" | "busy:merge" | "busy:rebase" | "busy:revert" | "clean";
+type GitBusyState =
+  | "busy:cherry-pick"
+  | "busy:merge"
+  | "busy:rebase"
+  | "busy:revert"
+  | "clean";
 
-const parseNullSeparated = (value: string): string[] => value.split("\0").filter(Boolean);
+const parseNullSeparated = (value: string): string[] =>
+  value.split("\0").filter(Boolean);
 
 const encodeNullSeparated = (paths: string[]): Buffer =>
   Buffer.from(paths.map((filePath) => `${filePath}\0`).join(""), "utf8");
@@ -33,9 +39,13 @@ const parseWorktreeList = (value: string): string[] =>
 
 const formatGitError = (args: string[], error: ExecError): Error => {
   const stderr =
-    typeof error.stderr === "string" ? error.stderr.trim() : error.stderr?.toString("utf8").trim();
+    typeof error.stderr === "string"
+      ? error.stderr.trim()
+      : error.stderr?.toString("utf8").trim();
   const stdout =
-    typeof error.stdout === "string" ? error.stdout.trim() : error.stdout?.toString("utf8").trim();
+    typeof error.stdout === "string"
+      ? error.stdout.trim()
+      : error.stdout?.toString("utf8").trim();
   const details = stderr || stdout || error.message;
 
   return new Error(`git ${args.join(" ")} failed: ${details}`);
@@ -45,7 +55,10 @@ const isInterruptedExecError = (error: ExecError): boolean =>
   error.signal === "SIGINT" || error.signal === "SIGTERM";
 
 const getIgnoreSignalDelaySeconds = (): string | null => {
-  const delayMs = Number.parseInt(process.env.SPOTLIGHT_TEST_IGNORE_SIGNAL_DELAY_MS ?? "", 10);
+  const delayMs = Number.parseInt(
+    process.env.SPOTLIGHT_TEST_IGNORE_SIGNAL_DELAY_MS ?? "",
+    10
+  );
 
   if (!Number.isFinite(delayMs) || delayMs <= 0) {
     return null;
@@ -54,7 +67,10 @@ const getIgnoreSignalDelaySeconds = (): string | null => {
   return (delayMs / 1000).toFixed(3);
 };
 
-const getGitCommand = (args: string[], ignoreSignals: boolean): [string, string[]] => {
+const getGitCommand = (
+  args: string[],
+  ignoreSignals: boolean
+): [string, string[]] => {
   if (!ignoreSignals) {
     return ["git", args];
   }
@@ -74,8 +90,15 @@ const getGitCommand = (args: string[], ignoreSignals: boolean): [string, string[
   ];
 };
 
-export const runGit = (args: string[], cwd: string, options: GitCommandOptions = {}): string => {
-  const [command, commandArgs] = getGitCommand(args, options.ignoreSignals ?? false);
+export const runGit = (
+  args: string[],
+  cwd: string,
+  options: GitCommandOptions = {}
+): string => {
+  const [command, commandArgs] = getGitCommand(
+    args,
+    options.ignoreSignals ?? false
+  );
 
   while (true) {
     try {
@@ -100,7 +123,11 @@ export const runGit = (args: string[], cwd: string, options: GitCommandOptions =
   }
 };
 
-const tryGit = (args: string[], cwd: string, options: GitCommandOptions = {}): string | null => {
+const tryGit = (
+  args: string[],
+  cwd: string,
+  options: GitCommandOptions = {}
+): string | null => {
   try {
     return runGit(args, cwd, options);
   } catch {
@@ -120,15 +147,25 @@ export const gitWithEnv = (
   args: string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
-  options: Omit<GitCommandOptions, "env"> = {},
+  options: Omit<GitCommandOptions, "env"> = {}
 ): string => runGit(args, cwd, { ...options, env });
 
-export const getChangedFiles = (cwd: string, fromRef: string, toRef: string): string[] =>
+export const getChangedFiles = (
+  cwd: string,
+  fromRef: string,
+  toRef: string
+): string[] =>
   parseNullSeparated(
-    runGit(["diff", "--name-only", "--no-renames", "-z", fromRef, toRef], cwd, { trim: false }),
+    runGit(["diff", "--name-only", "--no-renames", "-z", fromRef, toRef], cwd, {
+      trim: false,
+    })
   );
 
-export const restoreWorktreePaths = (cwd: string, sourceRef: string, paths: string[]): void => {
+export const restoreWorktreePaths = (
+  cwd: string,
+  sourceRef: string,
+  paths: string[]
+): void => {
   if (paths.length === 0) {
     return;
   }
@@ -146,20 +183,26 @@ export const restoreWorktreePaths = (cwd: string, sourceRef: string, paths: stri
     {
       input: encodeNullSeparated(paths),
       trim: false,
-    },
+    }
   );
 };
 
-export const hasPathInRef = (cwd: string, ref: string, filePath: string): boolean =>
-  tryGit(["cat-file", "-e", `${ref}:${filePath}`], cwd) !== null;
+export const hasPathInRef = (
+  cwd: string,
+  ref: string,
+  filePath: string
+): boolean => tryGit(["cat-file", "-e", `${ref}:${filePath}`], cwd) !== null;
 
-export const revParse = (cwd: string, ref: string, options: GitReadOptions = {}): string =>
-  runGit(["rev-parse", ref], cwd, options);
+export const revParse = (
+  cwd: string,
+  ref: string,
+  options: GitReadOptions = {}
+): string => runGit(["rev-parse", ref], cwd, options);
 
 export const tryRevParse = (
   cwd: string,
   ref: string,
-  options: GitReadOptions = {},
+  options: GitReadOptions = {}
 ): string | null => tryGit(["rev-parse", ref], cwd, options);
 
 export const getGitBranch = (cwd: string): string =>
@@ -169,7 +212,9 @@ const getGitDir = (cwd: string): string =>
   canonicalizePath(runGit(["rev-parse", "--absolute-git-dir"], cwd));
 
 export const getGitCommonDir = (cwd: string): string =>
-  canonicalizePath(runGit(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd));
+  canonicalizePath(
+    runGit(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd)
+  );
 
 export const getGitRoot = (cwd: string): string =>
   canonicalizePath(runGit(["rev-parse", "--show-toplevel"], cwd));
@@ -195,7 +240,7 @@ export const getMainWorktreeRoot = (cwd: string): string | null => {
 
   const commonDir = getGitCommonDir(cwd);
   const worktrees = parseWorktreeList(
-    runGit(["worktree", "list", "--porcelain"], cwd, { trim: false }),
+    runGit(["worktree", "list", "--porcelain"], cwd, { trim: false })
   );
 
   for (const worktree of worktrees) {
@@ -223,13 +268,19 @@ export const getShortSha = (sha: string): string => sha.slice(0, 12);
 
 export const getHeadLabel = (cwd: string): string => {
   const originalHead = revParse(cwd, "HEAD");
-  const originalBranch = tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd);
+  const originalBranch = tryGit(
+    ["symbolic-ref", "--quiet", "--short", "HEAD"],
+    cwd
+  );
 
   return originalBranch ?? `${getShortSha(originalHead)} (detached)`;
 };
 
 export const getGitBusyState = (cwd: string): GitBusyState => {
-  if (existsSync(gitPath(cwd, "rebase-merge")) || existsSync(gitPath(cwd, "rebase-apply"))) {
+  if (
+    existsSync(gitPath(cwd, "rebase-merge")) ||
+    existsSync(gitPath(cwd, "rebase-apply"))
+  ) {
     return "busy:rebase";
   }
 
@@ -269,9 +320,16 @@ export const gitClean = (cwd: string): void => {
 };
 
 export const listCheckpointRefs = (cwd: string): string[] => {
-  const output = tryGit(["for-each-ref", "--format=%(refname)", "refs/conductor-checkpoints"], cwd);
+  const output = tryGit(
+    ["for-each-ref", "--format=%(refname)", "refs/conductor-checkpoints"],
+    cwd
+  );
   return output ? output.split("\n").filter(Boolean) : [];
 };
 
-export const readCommitObject = (cwd: string, ref: string, options: GitReadOptions = {}): string =>
+export const readCommitObject = (
+  cwd: string,
+  ref: string,
+  options: GitReadOptions = {}
+): string =>
   runGit(["cat-file", "commit", ref], cwd, { ...options, trim: false });

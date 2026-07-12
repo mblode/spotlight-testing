@@ -1,10 +1,18 @@
-import { describe, expect, test } from "vitest";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { createWatcher } from "../src/watcher.js";
-import { cleanupTempDir, createTempDir, writeTextFile } from "./helpers/git-fixtures.js";
+import { describe, expect, test } from "vitest";
 
-const waitFor = async (predicate: () => boolean, timeoutMs = 2000): Promise<void> => {
+import { createWatcher } from "../src/watcher.js";
+import {
+  cleanupTempDir,
+  createTempDir,
+  writeTextFile,
+} from "./helpers/git-fixtures.js";
+
+const waitFor = async (
+  predicate: () => boolean,
+  timeoutMs = 2000
+): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {

@@ -3,7 +3,6 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { cleanupTempDir, createRepoFixture, createTempDir } from "./helpers/git-fixtures.js";
 import {
   isLocked,
   readActiveLockfile,
@@ -12,11 +11,16 @@ import {
   writeLockfile,
 } from "../src/lockfile.js";
 import type { SpotlightState } from "../src/types.js";
+import {
+  cleanupTempDir,
+  createRepoFixture,
+  createTempDir,
+} from "./helpers/git-fixtures.js";
 
 const buildState = (
   targetPath: string,
   worktreePath: string,
-  pid = process.pid,
+  pid = process.pid
 ): SpotlightState => ({
   lastSyncAt: new Date().toISOString(),
   pid,
@@ -58,7 +62,9 @@ describe("lockfile", () => {
       writeLockfile(state);
       expect(existsSync(lockfilePath)).toBe(true);
       expect(readLockfile()).toEqual(state);
-      expect(readFileSync(lockfilePath, "utf8")).toContain('"targetCheckpointId"');
+      expect(readFileSync(lockfilePath, "utf8")).toContain(
+        '"targetCheckpointId"'
+      );
 
       removeLockfile();
       expect(existsSync(lockfilePath)).toBe(false);
@@ -79,7 +85,11 @@ describe("lockfile", () => {
     process.env.SPOTLIGHT_LOCKFILE = lockfilePath;
 
     try {
-      writeFileSync(lockfilePath, JSON.stringify({ pid: process.pid }, null, 2), "utf8");
+      writeFileSync(
+        lockfilePath,
+        JSON.stringify({ pid: process.pid }, null, 2),
+        "utf8"
+      );
       expect(() => readLockfile()).toThrow(/Incompatible spotlight lockfile/);
     } finally {
       if (originalLockfileEnv === undefined) {
@@ -136,7 +146,10 @@ describe("lockfile", () => {
 
     try {
       const firstState = buildState(firstFixture.root, firstFixture.worktree);
-      const secondState = buildState(secondFixture.root, secondFixture.worktree);
+      const secondState = buildState(
+        secondFixture.root,
+        secondFixture.worktree
+      );
 
       writeLockfile(firstState, firstFixture.root);
       writeLockfile(secondState, secondFixture.root);

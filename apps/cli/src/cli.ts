@@ -4,8 +4,17 @@ import { resolve } from "node:path";
 import { Command } from "commander";
 
 import { getGitRoot, getMainWorktreeRoot, isGitRepo } from "./git.js";
-import { listActiveLockfiles, readActiveLockfile, readLockfile } from "./lockfile.js";
-import { showError, showInfo, showSpotlightStatus, showSuccess } from "./output.js";
+import {
+  listActiveLockfiles,
+  readActiveLockfile,
+  readLockfile,
+} from "./lockfile.js";
+import {
+  showError,
+  showInfo,
+  showSpotlightStatus,
+  showSuccess,
+} from "./output.js";
 import { getPackageVersion } from "./package-version.js";
 import { resetTarget, spotlight, stopSpotlightSession } from "./spotlight.js";
 import type { SpotlightState } from "./types.js";
@@ -24,7 +33,10 @@ const shouldDefaultToOn = (args: string[]): boolean => {
   }
 
   return (
-    firstArg !== "-h" && firstArg !== "--help" && firstArg !== "-V" && firstArg !== "--version"
+    firstArg !== "-h" &&
+    firstArg !== "--help" &&
+    firstArg !== "-V" &&
+    firstArg !== "--version"
   );
 };
 
@@ -33,7 +45,10 @@ const normalizedArgv = shouldDefaultToOn(rawArgs)
   ? [...process.argv.slice(0, 2), "on", ...rawArgs]
   : process.argv;
 
-const getTargetPath = (worktreePath: string, explicitTarget?: string): string | null => {
+const getTargetPath = (
+  worktreePath: string,
+  explicitTarget?: string
+): string | null => {
   if (explicitTarget) {
     return resolve(explicitTarget);
   }
@@ -53,7 +68,7 @@ const getOnlyActiveSpotlightState = (): SpotlightState | null => {
   }
 
   throw new Error(
-    "Multiple spotlight sessions are running. Run this command from the repo or worktree you want to inspect.",
+    "Multiple spotlight sessions are running. Run this command from the repo or worktree you want to inspect."
   );
 };
 
@@ -124,7 +139,7 @@ const getResetTargetPath = (explicitTarget?: string): string | null => {
 program
   .name("spotlight-testing")
   .description(
-    "Run worktree changes in a repo root by saving Conductor-style checkpoints and restoring them in place.",
+    "Run worktree changes in a repo root by saving Conductor-style checkpoints and restoring them in place."
   )
   .version(getPackageVersion());
 
@@ -134,27 +149,32 @@ program
   .argument("[worktree]", "Path to the git worktree to sync from")
   .option("-t, --target <path>", "Target directory to sync into")
   .option("-d, --debounce <ms>", "Debounce interval in milliseconds", "300")
-  .action((worktree: string | undefined, opts: { debounce: string; target?: string }) => {
-    try {
-      const worktreePath = resolve(worktree ?? process.cwd());
-      const targetPath = getTargetPath(worktreePath, opts.target);
+  .action(
+    (
+      worktree: string | undefined,
+      opts: { debounce: string; target?: string }
+    ) => {
+      try {
+        const worktreePath = resolve(worktree ?? process.cwd());
+        const targetPath = getTargetPath(worktreePath, opts.target);
 
-      if (!targetPath) {
-        throw new Error(
-          "Could not infer the main checkout from the worktree. Run from a linked worktree, pass a linked worktree path, or pass `--target <path>`.",
-        );
+        if (!targetPath) {
+          throw new Error(
+            "Could not infer the main checkout from the worktree. Run from a linked worktree, pass a linked worktree path, or pass `--target <path>`."
+          );
+        }
+
+        spotlight({
+          debounce: Number.parseInt(opts.debounce, 10),
+          target: resolve(targetPath),
+          worktree: worktreePath,
+        });
+      } catch (error) {
+        showError(`Error: ${error instanceof Error ? error.message : error}`);
+        process.exit(1);
       }
-
-      spotlight({
-        debounce: Number.parseInt(opts.debounce, 10),
-        target: resolve(targetPath),
-        worktree: worktreePath,
-      });
-    } catch (error) {
-      showError(`Error: ${error instanceof Error ? error.message : error}`);
-      process.exit(1);
     }
-  });
+  );
 
 program
   .command("off")
@@ -172,41 +192,54 @@ program
       stopSpotlightSession(state);
       showSuccess("Spotlight stopped");
     } catch (error) {
-      showError(`Cleanup error: ${error instanceof Error ? error.message : error}`);
+      showError(
+        `Cleanup error: ${error instanceof Error ? error.message : error}`
+      );
       process.exit(1);
     }
   });
 
 program
   .command("reset")
-  .description("Stop spotlight if needed, then reset and clean the target directory")
+  .description(
+    "Stop spotlight if needed, then reset and clean the target directory"
+  )
   .option("-t, --target <path>", "Target directory to reset")
   .option("-r, --remote <name>", "Remote to fetch from", "origin")
   .option("--to <ref>", "Ref to reset to after fetch (default: <remote>/main)")
   .option("--no-fetch", "Skip git fetch before reset")
-  .action((opts: { fetch: boolean; remote: string; target?: string; to?: string }) => {
-    try {
-      const targetPath = getResetTargetPath(opts.target);
+  .action(
+    (opts: {
+      fetch: boolean;
+      remote: string;
+      target?: string;
+      to?: string;
+    }) => {
+      try {
+        const targetPath = getResetTargetPath(opts.target);
 
-      if (!targetPath) {
+        if (!targetPath) {
+          showError(
+            "Could not determine a target. Run from inside the repo, use a linked worktree, or pass --target <path>."
+          );
+          process.exit(1);
+          return;
+        }
+
+        resetTarget({
+          branch: opts.to ?? `${opts.remote}/main`,
+          fetch: opts.fetch,
+          remote: opts.remote,
+          target: targetPath,
+        });
+      } catch (error) {
         showError(
-          "Could not determine a target. Run from inside the repo, use a linked worktree, or pass --target <path>.",
+          `Cleanup error: ${error instanceof Error ? error.message : error}`
         );
         process.exit(1);
-        return;
       }
-
-      resetTarget({
-        branch: opts.to ?? `${opts.remote}/main`,
-        fetch: opts.fetch,
-        remote: opts.remote,
-        target: targetPath,
-      });
-    } catch (error) {
-      showError(`Cleanup error: ${error instanceof Error ? error.message : error}`);
-      process.exit(1);
     }
-  });
+  );
 
 program
   .command("status")

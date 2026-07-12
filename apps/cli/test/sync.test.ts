@@ -2,9 +2,22 @@ import { mkdirSync, writeFileSync } from "node:fs";
 
 import { describe, expect, test, vi } from "vitest";
 
-import { getCheckpointCommit, restoreCheckpoint, saveCheckpoint } from "../src/checkpointer.js";
-import { getGitBranch, getGitRoot, getHeadLabel, isSameRepo } from "../src/git.js";
-import { readLockfile, removeLockfile, writeLockfile } from "../src/lockfile.js";
+import {
+  getCheckpointCommit,
+  restoreCheckpoint,
+  saveCheckpoint,
+} from "../src/checkpointer.js";
+import {
+  getGitBranch,
+  getGitRoot,
+  getHeadLabel,
+  isSameRepo,
+} from "../src/git.js";
+import {
+  readLockfile,
+  removeLockfile,
+  writeLockfile,
+} from "../src/lockfile.js";
 import { restore, stopSpotlightSession, syncOnce } from "../src/spotlight.js";
 import type { SpotlightState } from "../src/types.js";
 import {
@@ -24,7 +37,7 @@ const buildState = (
   fixture: ReturnType<typeof createRepoFixture>,
   targetCheckpointId: string,
   workspaceCheckpointId: string,
-  targetRestoreLabel: string,
+  targetRestoreLabel: string
 ): SpotlightState => ({
   lastSyncAt: new Date().toISOString(),
   pid: process.pid,
@@ -34,7 +47,10 @@ const buildState = (
   targetPath: getGitRoot(fixture.root),
   targetRestoreLabel,
   watchBackend: "fs.watch(serialized)",
-  workspaceCheckpointCommit: getCheckpointCommit(fixture.root, workspaceCheckpointId),
+  workspaceCheckpointCommit: getCheckpointCommit(
+    fixture.root,
+    workspaceCheckpointId
+  ),
   workspaceCheckpointId,
   worktreeBranch: "feature",
   worktreePath: getGitRoot(fixture.worktree),
@@ -58,7 +74,7 @@ describe("sync and restore", { timeout: 15_000 }, () => {
       expect(result.changedPaths).toEqual(["app.txt", "notes.txt"]);
       expect(getGitBranch(fixture.root)).toBe("main");
       expect(execGit(fixture.root, ["rev-parse", "HEAD"])).toBe(
-        execGit(fixture.worktree, ["rev-parse", "HEAD"]),
+        execGit(fixture.worktree, ["rev-parse", "HEAD"])
       );
       expect(readTextFile(fixture.root, "app.txt")).toBe("updated");
       expect(readTextFile(fixture.root, "notes.txt")).toBe("new-file");
@@ -84,8 +100,12 @@ describe("sync and restore", { timeout: 15_000 }, () => {
       syncOnce(fixture.worktree, fixture.root);
 
       expect(getGitBranch(fixture.root)).toBe("main");
-      expect(execGit(fixture.root, ["rev-parse", "HEAD"])).toBe(originalTargetHead);
-      expect(readTextFile(fixture.root, "app.txt")).toBe("committed-from-worktree");
+      expect(execGit(fixture.root, ["rev-parse", "HEAD"])).toBe(
+        originalTargetHead
+      );
+      expect(readTextFile(fixture.root, "app.txt")).toBe(
+        "committed-from-worktree"
+      );
     } finally {
       cleanupTempDir(fixture.parent);
     }
@@ -130,7 +150,10 @@ describe("sync and restore", { timeout: 15_000 }, () => {
       saveCheckpoint(fixture.root, { id: targetCheckpointId });
       writeTextFile(fixture.worktree, "app.txt", "updated-from-worktree\n");
       writeTextFile(fixture.worktree, "nested/new.txt", "new\n");
-      saveCheckpoint(fixture.worktree, { force: true, id: workspaceCheckpointId });
+      saveCheckpoint(fixture.worktree, {
+        force: true,
+        id: workspaceCheckpointId,
+      });
       restoreCheckpoint(fixture.root, workspaceCheckpointId);
       saveCheckpoint(fixture.root, { force: true, id: orphanCheckpointId });
 
@@ -138,12 +161,12 @@ describe("sync and restore", { timeout: 15_000 }, () => {
         fixture,
         targetCheckpointId,
         workspaceCheckpointId,
-        targetRestoreLabel,
+        targetRestoreLabel
       );
       writeLockfile(state, fixture.root);
       expect(readLockfile(fixture.root)).not.toBeNull();
       expect(getCheckpointNamespaceRefs(fixture.root)).toContain(
-        `refs/conductor-checkpoints/${orphanCheckpointId}`,
+        `refs/conductor-checkpoints/${orphanCheckpointId}`
       );
 
       restore(fixture.root);
@@ -174,20 +197,23 @@ describe("sync and restore", { timeout: 15_000 }, () => {
 
       saveCheckpoint(fixture.root, { id: targetCheckpointId });
       writeTextFile(fixture.worktree, "app.txt", "updated-from-worktree\n");
-      saveCheckpoint(fixture.worktree, { force: true, id: workspaceCheckpointId });
+      saveCheckpoint(fixture.worktree, {
+        force: true,
+        id: workspaceCheckpointId,
+      });
       restoreCheckpoint(fixture.root, workspaceCheckpointId);
 
       const state = buildState(
         fixture,
         targetCheckpointId,
         workspaceCheckpointId,
-        targetRestoreLabel,
+        targetRestoreLabel
       );
       writeLockfile(state, fixture.root);
 
       const killSpy = vi.spyOn(process, "kill").mockImplementation(((
         _pid: number,
-        signal?: number | NodeJS.Signals,
+        signal?: number | NodeJS.Signals
       ) => {
         if (signal === 0) {
           throw new Error("missing process");
@@ -221,7 +247,7 @@ describe("sync and restore", { timeout: 15_000 }, () => {
     try {
       expect(isSameRepo(fixture.worktree, unrelated.root)).toBe(false);
       expect(() => syncOnce(fixture.worktree, unrelated.root)).toThrow(
-        /must share the same git object database/,
+        /must share the same git object database/
       );
     } finally {
       cleanupTempDir(fixture.parent);
@@ -238,10 +264,12 @@ describe("sync and restore", { timeout: 15_000 }, () => {
       writeFileSync(
         readGitPath(fixture.worktree, "MERGE_HEAD"),
         `${execGit(fixture.worktree, ["rev-parse", "HEAD"])}\n`,
-        "utf8",
+        "utf8"
       );
 
-      expect(() => syncOnce(fixture.worktree, fixture.root)).toThrow(/merge is in progress/);
+      expect(() => syncOnce(fixture.worktree, fixture.root)).toThrow(
+        /merge is in progress/
+      );
     } finally {
       cleanupTempDir(fixture.parent);
     }
@@ -256,10 +284,12 @@ describe("sync and restore", { timeout: 15_000 }, () => {
       writeFileSync(
         readGitPath(fixture.worktree, "CHERRY_PICK_HEAD"),
         `${execGit(fixture.worktree, ["rev-parse", "HEAD"])}\n`,
-        "utf8",
+        "utf8"
       );
 
-      expect(() => syncOnce(fixture.worktree, fixture.root)).toThrow(/cherry-pick is in progress/);
+      expect(() => syncOnce(fixture.worktree, fixture.root)).toThrow(
+        /cherry-pick is in progress/
+      );
     } finally {
       cleanupTempDir(fixture.parent);
     }
@@ -274,10 +304,12 @@ describe("sync and restore", { timeout: 15_000 }, () => {
       writeFileSync(
         readGitPath(fixture.worktree, "REVERT_HEAD"),
         `${execGit(fixture.worktree, ["rev-parse", "HEAD"])}\n`,
-        "utf8",
+        "utf8"
       );
 
-      expect(() => syncOnce(fixture.worktree, fixture.root)).toThrow(/revert is in progress/);
+      expect(() => syncOnce(fixture.worktree, fixture.root)).toThrow(
+        /revert is in progress/
+      );
     } finally {
       cleanupTempDir(fixture.parent);
     }
@@ -289,8 +321,12 @@ describe("sync and restore", { timeout: 15_000 }, () => {
     });
 
     try {
-      mkdirSync(readGitPath(fixture.worktree, "rebase-merge"), { recursive: true });
-      expect(() => syncOnce(fixture.worktree, fixture.root)).toThrow(/rebase is in progress/);
+      mkdirSync(readGitPath(fixture.worktree, "rebase-merge"), {
+        recursive: true,
+      });
+      expect(() => syncOnce(fixture.worktree, fixture.root)).toThrow(
+        /rebase is in progress/
+      );
     } finally {
       cleanupTempDir(fixture.parent);
     }

@@ -1,6 +1,8 @@
 import { defineConfig } from "tsdown";
 
-const removeUnsupportedInputOptions = (buildOptions: Record<string, unknown>): void => {
+const removeUnsupportedInputOptions = (
+  buildOptions: Record<string, unknown>
+): void => {
   delete buildOptions.define;
   delete buildOptions.inject;
 };

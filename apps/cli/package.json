@@ -51,19 +51,19 @@
     "format:check": "oxfmt ."
   },
   "dependencies": {
-    "@clack/prompts": "^1.0.0",
+    "@clack/prompts": "^1.7.0",
     "chalk": "^5.6.2",
-    "commander": "^14.0.3"
+    "commander": "^15.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.19.11",
-    "oxfmt": "^0.42.0",
-    "oxlint": "^1.57.0",
-    "tsdown": "^0.12.0",
-    "typescript": "^5.8.0",
-    "vitest": "^4.0.0"
+    "@types/node": "^26.1.1",
+    "oxfmt": "^0.58.0",
+    "oxlint": "^1.73.0",
+    "tsdown": "^0.22.5",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.10"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   }
 }
