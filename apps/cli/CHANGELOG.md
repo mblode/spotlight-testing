@@ -1,5 +1,11 @@
 # spotlight-testing
 
+## 0.0.10
+
+### Patch Changes
+
+- 1b2af7b: Write the lockfile atomically. A plain write truncated the file before writing, so a concurrent reader could parse a half-written lockfile and fail with "Incompatible spotlight lockfile".
+
 ## 0.0.9
 
 ### Patch Changes
