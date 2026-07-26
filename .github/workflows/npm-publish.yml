@@ -14,6 +14,11 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Git hooks are a local dev aid; CI lints in ci.yml. Leaving them enabled
+    # makes lefthook run on the bot's "Version Packages" commit, where ultracite
+    # exits 1 because the staged changelog and manifest contain nothing to lint.
+    env:
+      LEFTHOOK: "0"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
