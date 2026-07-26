@@ -1,5 +1,11 @@
 # spotlight-testing
 
+## 0.0.9
+
+### Patch Changes
+
+- 5c14559: Update the toolchain to TypeScript 7, Node 24, and the latest ultracite/oxlint/oxfmt/tsdown, and pin the build to unprefixed `.js` output so the package `bin`, `main`, `types`, and `exports` entry points keep resolving.
+
 ## 0.0.8
 
 ### Patch Changes
