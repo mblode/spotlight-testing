@@ -12,6 +12,7 @@ export default defineConfig([
     clean: true,
     dts: false,
     entry: { cli: "src/cli.ts" },
+    fixedExtension: false,
     format: ["esm"],
     hooks: {
       "build:before": ({ buildOptions }): void => {
@@ -24,6 +25,7 @@ export default defineConfig([
   {
     dts: true,
     entry: { index: "src/index.ts" },
+    fixedExtension: false,
     format: ["esm"],
     hooks: {
       "build:before": ({ buildOptions }): void => {
