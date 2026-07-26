@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -195,7 +196,20 @@ export const writeLockfile = (
   }
 
   mkdirSync(dirname(lockfilePath), { recursive: true });
-  writeFileSync(lockfilePath, JSON.stringify(state, null, 2));
+
+  // Write then rename, rather than writing in place. A plain write truncates
+  // first, so a concurrent reader can parse a half-written file and reject it
+  // as an incompatible lockfile. The temp file shares a directory with the
+  // target to keep the rename on one filesystem, where it is atomic.
+  const tempPath = `${lockfilePath}.${process.pid}.tmp`;
+
+  try {
+    writeFileSync(tempPath, JSON.stringify(state, null, 2));
+    renameSync(tempPath, lockfilePath);
+  } catch (error) {
+    removeLockfileAtPath(tempPath);
+    throw error;
+  }
 };
 
 export const removeLockfile = (repoPath?: string): void => {

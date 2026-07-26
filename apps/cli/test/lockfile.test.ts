@@ -1,4 +1,10 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, test } from "vitest";
@@ -68,6 +74,36 @@ describe("lockfile", () => {
 
       removeLockfile();
       expect(existsSync(lockfilePath)).toBe(false);
+    } finally {
+      if (originalLockfileEnv === undefined) {
+        delete process.env.SPOTLIGHT_LOCKFILE;
+      } else {
+        process.env.SPOTLIGHT_LOCKFILE = originalLockfileEnv;
+      }
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("replaces the lockfile instead of truncating it in place", () => {
+    const dir = createTempDir();
+    const lockfilePath = join(dir, "spotlight.lock");
+    const originalLockfileEnv = process.env.SPOTLIGHT_LOCKFILE;
+    process.env.SPOTLIGHT_LOCKFILE = lockfilePath;
+
+    try {
+      writeLockfile(buildState("/tmp/target-a", "/tmp/worktree-a"));
+      const firstInode = statSync(lockfilePath).ino;
+
+      const second = buildState("/tmp/target-b", "/tmp/worktree-b");
+      writeLockfile(second);
+
+      // A truncating write reuses the inode, which is the window where a
+      // reader can see a half-written file. A rename swaps in a new one.
+      expect(statSync(lockfilePath).ino).not.toBe(firstInode);
+      expect(readLockfile()).toEqual(second);
+      expect(readdirSync(dir).filter((name) => name.endsWith(".tmp"))).toEqual(
+        []
+      );
     } finally {
       if (originalLockfileEnv === undefined) {
         delete process.env.SPOTLIGHT_LOCKFILE;

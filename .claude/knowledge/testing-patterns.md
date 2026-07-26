@@ -13,17 +13,18 @@ This suite is also the only thing that verifies the built CLI is launchable, so
 it is the de facto guard against `package.json` entry points drifting from build
 output. Do not assume a green Linux job means the package is installable.
 
-## Known flake: "Incompatible spotlight lockfile"
+## Fixed flake: "Incompatible spotlight lockfile"
 
-`writeLockfile` in `src/lockfile.ts` uses a plain `writeFileSync`, which is not
-atomic. A concurrent reader can observe a partially written file, fail the JSON
-parse or shape guard, and throw `Incompatible spotlight lockfile at <path>`.
-This shows up intermittently in the e2e suite and is unrelated to whatever
-change is being tested.
+`writeLockfile` in `src/lockfile.ts` used a plain `writeFileSync`, which
+truncates before writing. A concurrent reader could observe a partially written
+file, fail the JSON parse or shape guard, and throw `Incompatible spotlight
+lockfile at <path>` — an intermittent e2e failure unrelated to the change under
+test. Fixed in 0.0.10 by writing to a sibling temp file and `renameSync`-ing
+over the target, which is atomic within a filesystem.
 
-The root fix is to write to a temp file and `renameSync` over the target
-(atomic on POSIX). Until that lands, a single such failure is safe to re-run;
-repeated failures are not.
+The regression test asserts the inode changes across writes rather than racing
+threads, since a timing-based test for this would itself be flaky. If you
+change the write path, keep that guarantee: any in-place write reopens the race.
 
 ## Timeouts mean the CLI never started
 
