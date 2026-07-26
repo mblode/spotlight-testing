@@ -19,6 +19,14 @@ Turborepo monorepo for worktree-based checkpoint sync.
 - Root file: shared monorepo rules only
 - `apps/cli/AGENTS.md`: CLI-specific commands, architecture, and gotchas
 
+## Available Context
+
+Additional context is available in the files below. Consult the relevant file when working in a related area — see each description for scope.
+
+- `.claude/knowledge/deployment-release.md` — Release process, changesets CI flow, publish gotchas
+- `.claude/knowledge/testing-patterns.md` — macOS-only e2e suite, known flakes, how to run suites
+- `.claude/knowledge/architecture-boundaries.md` — Build output ↔ package.json entry-point contract
+
 ## Cross-Workspace Gotchas
 
 - **Turbo delegates everything**: Root scripts call `turbo <task>`. Never run build/test/lint commands directly from root — turbo handles workspace resolution.
