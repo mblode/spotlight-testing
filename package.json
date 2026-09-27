@@ -19,7 +19,7 @@
     "release": "turbo build && changeset publish"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.0",
+    "@changesets/cli": "^3.0.3",
     "knip": "^6.26.0",
     "lefthook": "^2.1.10",
     "oxfmt": "^0.58.0",
