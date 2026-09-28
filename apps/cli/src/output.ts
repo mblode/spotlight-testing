@@ -16,7 +16,7 @@ const timestamp = (): string =>
 const formatStatusLine = ({ label, value }: StatusLine): string =>
   `${chalk.dim(label.padEnd(STATUS_LABEL_WIDTH))} ${value}`;
 
-export const formatAccent = (value: string): string => chalk.cyan(value);
+const formatAccent = (value: string): string => chalk.cyan(value);
 export const formatCommit = (value: string): string => chalk.magenta(value);
 const formatDim = (value: string): string => chalk.dim(value);
 const formatHeading = (value: string): string => chalk.bold(value);
